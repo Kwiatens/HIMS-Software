@@ -4,6 +4,8 @@
 #include "platform/Console.h"
 #include "platform/HttpServer.h"
 
+#include <ftxui/dom/elements.hpp>
+
 #include <filesystem>
 #include <mutex>
 #include <sstream>
@@ -78,6 +80,15 @@ class App {
   void renderStatusBar(std::ostringstream& out, const ConsoleSize& size);
   void renderMessage(std::ostringstream& out, const ConsoleSize& size);
 
+  ftxui::Element renderUi() const;
+  ftxui::Element renderDashboardUi() const;
+  ftxui::Element renderStockUi() const;
+  ftxui::Element renderDetailUi() const;
+  ftxui::Element renderSearchBarUi() const;
+  ftxui::Element renderStatusBarUi() const;
+  ftxui::Element renderMessageUi() const;
+  ftxui::Element renderPageUi() const;
+
   void setMessage(std::string text, int seconds = 3);
   bool messageVisible() const;
   void clearMessageIfExpired();
@@ -113,7 +124,6 @@ class App {
   InventoryStore store_;
   std::vector<ActivityEntry> activities_;
   LocalHttpServer server_;
-  ConsoleSession console_;
   std::filesystem::path root_;
   std::filesystem::path dataPath_;
   std::filesystem::path inventoryPath_;

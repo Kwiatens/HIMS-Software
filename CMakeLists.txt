@@ -12,12 +12,23 @@ else()
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+include(FetchContent)
+
+find_package(ftxui CONFIG QUIET)
+if(NOT ftxui_FOUND)
+  FetchContent_Declare(ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+    GIT_TAG v6.1.9
+  )
+  FetchContent_MakeAvailable(ftxui)
+endif()
+
 add_executable(hims
   src/main.cpp
   src/app.cpp
   src/core/Inventory.cpp
-  src/platform/Console.cpp
   src/platform/HttpServer.cpp
+  src/platform/Console.cpp
 )
 
 target_include_directories(hims PRIVATE src)
@@ -26,10 +37,11 @@ if(WIN32)
   target_link_libraries(hims PRIVATE ws2_32 shell32)
 endif()
 
+target_link_libraries(hims PRIVATE ftxui::screen ftxui::dom ftxui::component)
+
 add_executable(hims_tests
   tests/hims_tests.cpp
   src/core/Inventory.cpp
 )
 
 target_include_directories(hims_tests PRIVATE src)
-

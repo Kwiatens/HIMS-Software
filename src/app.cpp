@@ -1,5 +1,9 @@
 #include "App.h"
 
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -7,6 +11,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <thread>
 
@@ -17,11 +22,197 @@ namespace {
 constexpr const char* kColorReset = "\x1b[0m";
 constexpr const char* kColorTitle = "\x1b[38;5;81m";
 constexpr const char* kColorAccent = "\x1b[38;5;49m";
+constexpr const char* kColorInfo = "\x1b[38;5;117m";
+constexpr const char* kColorSuccess = "\x1b[38;5;114m";
+constexpr const char* kColorLink = "\x1b[38;5;87m";
+constexpr const char* kColorLabel = "\x1b[38;5;111m";
 constexpr const char* kColorMuted = "\x1b[38;5;243m";
 constexpr const char* kColorWarn = "\x1b[38;5;214m";
 constexpr const char* kColorDanger = "\x1b[38;5;203m";
 constexpr const char* kColorDim = "\x1b[38;5;245m";
 constexpr const char* kColorSelect = "\x1b[48;5;236m";
+constexpr const char* kBgPanelLeft = "\x1b[48;5;233m";
+constexpr const char* kBgPanelRight = "\x1b[48;5;235m";
+constexpr const char* kBgRowDark = "\x1b[48;5;232m";
+constexpr const char* kBgRowLight = "\x1b[48;5;236m";
+constexpr const char* kBgRowSelected = "\x1b[48;5;24m";
+
+std::string padRight(std::string value, int width);
+
+std::string styleText(const std::string& text, const char* fg = nullptr, const char* bg = nullptr) {
+  std::ostringstream out;
+  if (bg != nullptr) {
+    out << bg;
+  }
+  if (fg != nullptr) {
+    out << fg;
+  }
+  out << text << kColorReset;
+  return out.str();
+}
+
+std::string styleCell(const std::string& text, int width, const char* fg = nullptr, const char* bg = nullptr) {
+  return styleText(padRight(text, width), fg, bg);
+}
+
+ftxui::Color uiTitleColor() {
+  return ftxui::Color::RGB(102, 204, 255);
+}
+
+ftxui::Color uiAccentColor() {
+  return ftxui::Color::RGB(80, 220, 170);
+}
+
+ftxui::Color uiInfoColor() {
+  return ftxui::Color::RGB(120, 180, 255);
+}
+
+ftxui::Color uiSuccessColor() {
+  return ftxui::Color::RGB(115, 220, 140);
+}
+
+ftxui::Color uiLinkColor() {
+  return ftxui::Color::RGB(98, 200, 255);
+}
+
+ftxui::Color uiLabelColor() {
+  return ftxui::Color::RGB(170, 160, 255);
+}
+
+ftxui::Color uiWarnColor() {
+  return ftxui::Color::RGB(255, 190, 80);
+}
+
+ftxui::Color uiDangerColor() {
+  return ftxui::Color::RGB(255, 110, 120);
+}
+
+ftxui::Color uiMutedColor() {
+  return ftxui::Color::RGB(180, 180, 180);
+}
+
+ftxui::Color uiDimColor() {
+  return ftxui::Color::RGB(120, 120, 120);
+}
+
+ftxui::Color uiPanelLeftBg() {
+  return ftxui::Color::RGB(24, 24, 24);
+}
+
+ftxui::Color uiPanelRightBg() {
+  return ftxui::Color::RGB(30, 30, 30);
+}
+
+ftxui::Color uiRowDarkBg() {
+  return ftxui::Color::RGB(20, 20, 20);
+}
+
+ftxui::Color uiRowLightBg() {
+  return ftxui::Color::RGB(42, 42, 42);
+}
+
+ftxui::Color uiRowSelectedBg() {
+  return ftxui::Color::RGB(25, 70, 110);
+}
+
+ftxui::Element styledText(const std::string& text, std::optional<ftxui::Color> fg = std::nullopt,
+                          std::optional<ftxui::Color> bg = std::nullopt) {
+  auto element = ftxui::text(text);
+  if (fg) {
+    element = element | ftxui::color(*fg);
+  }
+  if (bg) {
+    element = element | ftxui::bgcolor(*bg);
+  }
+  return element;
+}
+
+ftxui::Element fullLine(const std::string& text, std::optional<ftxui::Color> fg = std::nullopt,
+                        std::optional<ftxui::Color> bg = std::nullopt) {
+  auto element = ftxui::hbox({ftxui::text(text), ftxui::filler()});
+  if (fg) {
+    element = element | ftxui::color(*fg);
+  }
+  if (bg) {
+    element = element | ftxui::bgcolor(*bg);
+  }
+  return element;
+}
+
+ftxui::Element linesBlock(const std::vector<std::string>& lines, std::optional<ftxui::Color> fg = std::nullopt,
+                          std::optional<ftxui::Color> bg = std::nullopt) {
+  ftxui::Elements elements;
+  elements.reserve(lines.size());
+  for (const auto& line : lines) {
+    elements.push_back(fullLine(line, fg, bg));
+  }
+  return ftxui::vbox(std::move(elements));
+}
+
+ftxui::Element bulletLine(const std::string& label, const std::string& value, ftxui::Color labelColor,
+                          ftxui::Color valueColor) {
+  return ftxui::hbox({
+      styledText(label, labelColor),
+      styledText(value, valueColor),
+      ftxui::filler(),
+  });
+}
+
+ftxui::Element panel(const std::string& title, ftxui::Elements body, std::optional<ftxui::Color> titleColor = std::nullopt,
+                     std::optional<ftxui::Color> borderColor = std::nullopt) {
+  auto titleElement = styledText(title, titleColor);
+  auto element = ftxui::window(titleElement, ftxui::vbox(std::move(body)));
+  if (borderColor) {
+    element = element | ftxui::color(*borderColor);
+  }
+  return element;
+}
+
+KeyEvent translateEvent(const ftxui::Event& event) {
+  if (event == ftxui::Event::Return) {
+    return {KeyType::Enter, '\0'};
+  }
+  if (event == ftxui::Event::Escape) {
+    return {KeyType::Escape, '\0'};
+  }
+  if (event == ftxui::Event::Backspace) {
+    return {KeyType::Backspace, '\0'};
+  }
+  if (event == ftxui::Event::Tab) {
+    return {KeyType::Tab, '\0'};
+  }
+  if (event == ftxui::Event::ArrowUp) {
+    return {KeyType::Up, '\0'};
+  }
+  if (event == ftxui::Event::ArrowDown) {
+    return {KeyType::Down, '\0'};
+  }
+  if (event == ftxui::Event::ArrowLeft) {
+    return {KeyType::Left, '\0'};
+  }
+  if (event == ftxui::Event::ArrowRight) {
+    return {KeyType::Right, '\0'};
+  }
+  if (event == ftxui::Event::Home) {
+    return {KeyType::Home, '\0'};
+  }
+  if (event == ftxui::Event::End) {
+    return {KeyType::End, '\0'};
+  }
+  if (event == ftxui::Event::PageUp) {
+    return {KeyType::PageUp, '\0'};
+  }
+  if (event == ftxui::Event::PageDown) {
+    return {KeyType::PageDown, '\0'};
+  }
+  if (event == ftxui::Event::Delete) {
+    return {KeyType::Delete, '\0'};
+  }
+  if (event.is_character() && !event.character().empty()) {
+    return {KeyType::Character, event.character()[0]};
+  }
+  return {KeyType::Unknown, '\0'};
+}
 
 std::string padRight(std::string value, int width) {
   if (width <= 0) {
@@ -91,7 +282,8 @@ std::vector<std::string> wrapText(const std::string& text, int width) {
 
 void renderColumns(std::ostringstream& out, const std::vector<std::string>& leftLines,
                    const std::vector<std::string>& rightLines, int leftWidth, int rightWidth, int maxRows,
-                   int gap = 4) {
+                   int gap = 4, const char* leftFg = nullptr, const char* leftBg = nullptr,
+                   const char* rightFg = nullptr, const char* rightBg = nullptr) {
   const int rowCount = std::min(
       maxRows,
       std::max(static_cast<int>(leftLines.size()), static_cast<int>(rightLines.size())));
@@ -99,14 +291,21 @@ void renderColumns(std::ostringstream& out, const std::vector<std::string>& left
   for (int row = 0; row < rowCount; ++row) {
     const auto left = row < static_cast<int>(leftLines.size()) ? leftLines[static_cast<std::size_t>(row)] : "";
     const auto right = row < static_cast<int>(rightLines.size()) ? rightLines[static_cast<std::size_t>(row)] : "";
-    out << padRight(left, leftWidth) << std::string(static_cast<std::size_t>(gap), ' ')
-        << padRight(right, rightWidth) << '\n';
+    out << styleCell(left, leftWidth, leftFg, leftBg) << std::string(static_cast<std::size_t>(gap), ' ')
+        << styleCell(right, rightWidth, rightFg, rightBg) << '\n';
   }
 }
 
 void appendWrapped(std::vector<std::string>& lines, const std::string& text, int width) {
   const auto wrapped = wrapText(text, width);
   lines.insert(lines.end(), wrapped.begin(), wrapped.end());
+}
+
+void appendWrappedStyled(std::vector<std::string>& lines, const std::string& text, int width, const char* fg) {
+  const auto wrapped = wrapText(text, width);
+  for (const auto& line : wrapped) {
+    lines.push_back(styleText(line, fg));
+  }
 }
 
 std::string joinTags(const std::vector<std::string>& tags) {
@@ -246,25 +445,284 @@ void App::saveState() {
   saveActivities(activityPath_, activities_);
 }
 
-int App::run() {
-  while (running_) {
-    processScans();
-    processInput();
-    clearMessageIfExpired();
-    const auto size = consoleSize();
-    if (dirty_ || size.columns != lastDrawSize_.columns || size.rows != lastDrawSize_.rows) {
-      render();
-      dirty_ = false;
-      lastDrawSize_ = size;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+ftxui::Element App::renderUi() const {
+  ftxui::Elements body;
+  body.push_back(fullLine("HIMS Terminal  " + summaryLine(), uiTitleColor(), uiPanelLeftBg()));
+  body.push_back(ftxui::separator());
+  body.push_back(renderPageUi() | ftxui::flex);
+  body.push_back(ftxui::separator());
+  body.push_back(renderSearchBarUi());
+  body.push_back(renderMessageUi());
+  body.push_back(renderStatusBarUi());
+  return ftxui::vbox(std::move(body));
+}
+
+ftxui::Element App::renderPageUi() const {
+  switch (page_) {
+    case Page::Dashboard:
+      return renderDashboardUi();
+    case Page::Stock:
+      return renderStockUi();
+    case Page::Detail:
+      return renderDetailUi();
   }
 
+  return ftxui::text("");
+}
+
+ftxui::Element App::renderDashboardUi() const {
+  const auto summary = summarize(store_.items());
+
+  ftxui::Elements leftBody;
+  leftBody.push_back(fullLine("Summary", uiAccentColor(), uiPanelLeftBg()));
+  leftBody.push_back(bulletLine("Parts: ", std::to_string(summary.itemCount), uiInfoColor(), uiTitleColor()));
+  leftBody.push_back(bulletLine("Units: ", std::to_string(summary.totalUnits), uiSuccessColor(), uiTitleColor()));
+  leftBody.push_back(bulletLine("Low stock: ", std::to_string(summary.lowStockCount), uiWarnColor(), uiTitleColor()));
+  leftBody.push_back(
+      bulletLine("Missing metadata: ", std::to_string(summary.missingMetadataCount), uiDangerColor(), uiTitleColor()));
+  leftBody.push_back(bulletLine("Unsynced: ", std::to_string(summary.unsyncedCount), uiLabelColor(), uiTitleColor()));
+  leftBody.push_back(ftxui::separator());
+  leftBody.push_back(fullLine("Scanner", uiTitleColor(), uiPanelLeftBg()));
+  leftBody.push_back(ftxui::paragraphAlignLeft(scannerUrl()) | ftxui::color(uiLinkColor()));
+  leftBody.push_back(ftxui::separator());
+  leftBody.push_back(fullLine("Inventory file", uiTitleColor(), uiPanelLeftBg()));
+  leftBody.push_back(ftxui::paragraphAlignLeft(inventoryPath_.string()) | ftxui::color(uiInfoColor()));
+  leftBody.push_back(ftxui::separator());
+  leftBody.push_back(fullLine("Quick actions", uiAccentColor(), uiPanelLeftBg()));
+  leftBody.push_back(
+      ftxui::paragraphAlignLeft("1 Stock browser   2/s Scanner   3 Add item   4 Reload   / Search   q Quit") |
+      ftxui::color(uiDimColor()));
+
+  ftxui::Elements rightBody;
+  rightBody.push_back(fullLine("Low-stock alerts", uiWarnColor(), uiPanelRightBg()));
+  int alertCount = 0;
+  for (const auto& item : store_.items()) {
+    if (!item.lowStock()) {
+      continue;
+    }
+    rightBody.push_back(fullLine("  - " + item.partName + " qty " + std::to_string(item.quantity) + " / " +
+                                     std::to_string(item.reorderThreshold) + "  [" + item.category + "]",
+                                 uiWarnColor(), uiRowLightBg()));
+    if (++alertCount >= 6) {
+      break;
+    }
+  }
+  if (alertCount == 0) {
+    rightBody.push_back(fullLine("  No low-stock items.", uiMutedColor(), uiPanelRightBg()));
+  }
+
+  rightBody.push_back(ftxui::separator());
+  rightBody.push_back(fullLine("Recent activity", uiAccentColor(), uiPanelRightBg()));
+  const auto activityCount = std::min<std::size_t>(activities_.size(), 8);
+  for (std::size_t offset = 0; offset < activityCount; ++offset) {
+    const auto& entry = activities_[activities_.size() - 1 - offset];
+    const auto line = "  - " + nowTimestampString(entry.timestamp) + " | " + entry.kind + " | " + entry.message;
+    ftxui::Color color = uiMutedColor();
+    if (entry.kind.find("scan") != std::string::npos) {
+      color = uiLinkColor();
+    } else if (entry.kind.find("add") != std::string::npos) {
+      color = uiSuccessColor();
+    } else if (entry.kind.find("edit") != std::string::npos) {
+      color = uiInfoColor();
+    } else if (entry.kind == "system") {
+      color = uiLabelColor();
+    }
+    rightBody.push_back(ftxui::paragraphAlignLeft(line) | ftxui::color(color));
+  }
+  if (activityCount == 0) {
+    rightBody.push_back(fullLine("  No recent activity.", uiMutedColor(), uiPanelRightBg()));
+  }
+
+  auto leftPanel = panel("Overview", std::move(leftBody), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()) | ftxui::flex;
+  auto rightPanel = panel("Activity", std::move(rightBody), uiWarnColor()) | ftxui::bgcolor(uiPanelRightBg()) | ftxui::flex;
+
+  return ftxui::hbox({
+      leftPanel,
+      ftxui::separator(),
+      rightPanel,
+  });
+}
+
+ftxui::Element App::renderStockUi() const {
+  const auto filtered = filteredIndices();
+
+  ftxui::Elements listRows;
+  listRows.push_back(fullLine("Part                          Category       Qty", uiMutedColor(), uiPanelLeftBg()));
+
+  if (filtered.empty()) {
+    listRows.push_back(fullLine("No items match \"" + searchQuery_ + "\".", uiMutedColor(), uiPanelLeftBg()));
+  } else {
+    for (std::size_t index = 0; index < filtered.size(); ++index) {
+      const auto& item = store_.items()[filtered[index]];
+      const bool selected = index == selectedPosition_;
+      const bool lowStock = item.lowStock();
+      const auto bg = selected ? uiRowSelectedBg() : (index % 2 == 0 ? uiRowDarkBg() : uiRowLightBg());
+      const auto fg = selected ? uiTitleColor() : (lowStock ? uiWarnColor() : uiMutedColor());
+      auto row = fullLine("  " + padRight(item.partName, 28) + "  " + padRight(item.category, 11) + " " +
+                              padRight(std::to_string(item.quantity), 4),
+                          fg, bg);
+      if (selected) {
+        row = row | ftxui::select;
+      }
+      listRows.push_back(row);
+    }
+  }
+
+  ftxui::Elements detailRows;
+  if (const auto* item = selectedItem()) {
+    detailRows.push_back(fullLine("Core details", uiAccentColor(), uiPanelRightBg()));
+    detailRows.push_back(bulletLine("Name: ", item->partName, uiInfoColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Manufacturer: ", item->manufacturer, uiInfoColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Category: ", item->category, uiLabelColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Quantity: ", std::to_string(item->quantity), uiSuccessColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Threshold: ", std::to_string(item->reorderThreshold), uiWarnColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Location: ", item->location, uiMutedColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Tags: ", renderTags(item->tags), uiLabelColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Parameters: ", renderParameters(item->parameters), uiInfoColor(), uiTitleColor()));
+    detailRows.push_back(ftxui::separator());
+    detailRows.push_back(fullLine("Metadata", uiAccentColor(), uiPanelRightBg()));
+    detailRows.push_back(bulletLine("DigiKey: ", renderUrl(item->digikeyPartNumber), uiLinkColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Datasheet: ", renderUrl(item->datasheetUrl), uiLinkColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Product: ", renderUrl(item->productUrl), uiLinkColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("SKU: ", renderUrl(item->sku), uiLabelColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Status: ", item->syncStatus, uiSuccessColor(), uiTitleColor()));
+    detailRows.push_back(bulletLine("Updated: ", nowTimestampString(item->lastUpdated), uiMutedColor(), uiTitleColor()));
+    detailRows.push_back(ftxui::separator());
+    detailRows.push_back(fullLine("Notes", uiWarnColor(), uiPanelRightBg()));
+    detailRows.push_back(ftxui::paragraphAlignLeft(item->notes) | ftxui::color(uiMutedColor()));
+  } else {
+    detailRows.push_back(fullLine("No item selected.", uiMutedColor(), uiPanelRightBg()));
+  }
+
+  auto listContent = ftxui::vbox(std::move(listRows)) | ftxui::frame | ftxui::vscroll_indicator;
+  auto listPanel = ftxui::window(styledText("Items", uiAccentColor()), std::move(listContent)) |
+                   ftxui::bgcolor(uiPanelLeftBg()) | ftxui::flex;
+  auto detailPanel = panel("Detail", std::move(detailRows), uiAccentColor()) | ftxui::bgcolor(uiPanelRightBg()) | ftxui::flex;
+
+  return ftxui::hbox({
+      listPanel,
+      ftxui::separator(),
+      detailPanel,
+  });
+}
+
+ftxui::Element App::renderDetailUi() const {
+  ftxui::Elements leftRows;
+  ftxui::Elements rightRows;
+
+  if (const auto* item = selectedItem()) {
+    leftRows.push_back(fullLine("Core details", uiAccentColor(), uiPanelLeftBg()));
+    leftRows.push_back(bulletLine("Name: ", item->partName, uiInfoColor(), uiTitleColor()));
+    leftRows.push_back(bulletLine("Manufacturer: ", item->manufacturer, uiInfoColor(), uiTitleColor()));
+    leftRows.push_back(bulletLine("Category: ", item->category, uiLabelColor(), uiTitleColor()));
+    leftRows.push_back(bulletLine("Quantity: ", std::to_string(item->quantity), uiSuccessColor(), uiTitleColor()));
+    leftRows.push_back(bulletLine("Threshold: ", std::to_string(item->reorderThreshold), uiWarnColor(), uiTitleColor()));
+    leftRows.push_back(bulletLine("Location: ", item->location, uiMutedColor(), uiTitleColor()));
+    leftRows.push_back(bulletLine("Tags: ", renderTags(item->tags), uiLabelColor(), uiTitleColor()));
+    leftRows.push_back(bulletLine("Parameters: ", renderParameters(item->parameters), uiInfoColor(), uiTitleColor()));
+
+    rightRows.push_back(fullLine("Metadata", uiAccentColor(), uiPanelRightBg()));
+    rightRows.push_back(bulletLine("DigiKey: ", renderUrl(item->digikeyPartNumber), uiLinkColor(), uiTitleColor()));
+    rightRows.push_back(bulletLine("Datasheet: ", renderUrl(item->datasheetUrl), uiLinkColor(), uiTitleColor()));
+    rightRows.push_back(bulletLine("Product: ", renderUrl(item->productUrl), uiLinkColor(), uiTitleColor()));
+    rightRows.push_back(bulletLine("SKU: ", renderUrl(item->sku), uiLabelColor(), uiTitleColor()));
+    rightRows.push_back(bulletLine("Status: ", item->syncStatus, uiSuccessColor(), uiTitleColor()));
+    rightRows.push_back(bulletLine("Updated: ", nowTimestampString(item->lastUpdated), uiMutedColor(), uiTitleColor()));
+    rightRows.push_back(ftxui::separator());
+    rightRows.push_back(fullLine("Notes", uiWarnColor(), uiPanelRightBg()));
+    rightRows.push_back(ftxui::paragraphAlignLeft(item->notes) | ftxui::color(uiMutedColor()));
+  } else {
+    leftRows.push_back(fullLine("No item selected.", uiMutedColor(), uiPanelLeftBg()));
+    rightRows.push_back(fullLine("Press Esc to return to stock.", uiMutedColor(), uiPanelRightBg()));
+  }
+
+  auto leftPanel = panel("Item detail", std::move(leftRows), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()) | ftxui::flex;
+  auto rightPanel = panel("Links and notes", std::move(rightRows), uiAccentColor()) | ftxui::bgcolor(uiPanelRightBg()) | ftxui::flex;
+
+  return ftxui::hbox({
+      leftPanel,
+      ftxui::separator(),
+      rightPanel,
+  });
+}
+
+ftxui::Element App::renderSearchBarUi() const {
+  ftxui::Elements rows;
+  if (inputMode_ == InputMode::Search) {
+    rows.push_back(fullLine("Search  /" + inputBuffer_ + "_", uiLinkColor(), uiPanelLeftBg()));
+  } else {
+    rows.push_back(fullLine("Search  /" + searchQuery_, uiMutedColor(), uiPanelLeftBg()));
+  }
+
+  if (inputMode_ == InputMode::EditFieldMenu) {
+    ftxui::Elements options;
+    options.push_back(fullLine("Edit fields", uiAccentColor(), uiPanelLeftBg()));
+    for (std::size_t index = 0; index < menuOptions_.size(); ++index) {
+      const auto bg = static_cast<int>(index) == fieldMenuIndex_ ? uiRowSelectedBg() : (index % 2 == 0 ? uiRowDarkBg() : uiRowLightBg());
+      auto option = fullLine("  [" + std::to_string(index < 9 ? index + 1 : 0) + "] " + menuOptions_[index].label,
+                             static_cast<int>(index) == fieldMenuIndex_ ? uiTitleColor() : uiMutedColor(), bg);
+      if (static_cast<int>(index) == fieldMenuIndex_) {
+        option = option | ftxui::select;
+      }
+      options.push_back(option);
+    }
+    rows.push_back(panel("Edit fields", std::move(options), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()));
+  } else if (inputMode_ == InputMode::EditValue) {
+    rows.push_back(fullLine("Input  " + activePrompt() + inputBuffer_ + "_", uiLinkColor(), uiPanelLeftBg()));
+  }
+
+  return ftxui::vbox(std::move(rows));
+}
+
+ftxui::Element App::renderStatusBarUi() const {
+  return fullLine(scannerUrl() + "  Dashboard: Tab/1  Stock: arrows/jk  Detail: Enter  Edit: e  New: n  Scanner: s  Quit: q",
+                  uiLinkColor(), uiPanelRightBg());
+}
+
+ftxui::Element App::renderMessageUi() const {
+  if (message_.empty()) {
+    return ftxui::text("");
+  }
+  return fullLine(message_, uiAccentColor(), uiPanelLeftBg());
+}
+
+int App::run() {
+  running_ = true;
+  auto screen = ftxui::ScreenInteractive::Fullscreen();
+  auto renderer = ftxui::Renderer([this] { return renderUi(); });
+  auto component = ftxui::CatchEvent(renderer, [this, &screen](ftxui::Event event) {
+    if (event == ftxui::Event::Custom) {
+      processScans();
+      clearMessageIfExpired();
+      return true;
+    }
+
+    const auto key = translateEvent(event);
+    if (key.type == KeyType::Unknown && event != ftxui::Event::Escape) {
+      return false;
+    }
+
+    handleKey(key);
+    if (!running_) {
+      screen.ExitLoopClosure()();
+    }
+    return true;
+  });
+
+  std::thread ticker([this, &screen] {
+    while (running_) {
+      screen.PostEvent(ftxui::Event::Custom);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  });
+
+  screen.Loop(component);
+  running_ = false;
+  if (ticker.joinable()) {
+    ticker.join();
+  }
   saveState();
   server_.stop();
-  console_.restore();
-  clearConsole();
-  std::cout << "HIMS closed.\n" << std::flush;
   return 0;
 }
 
@@ -592,7 +1050,6 @@ void App::handleEditValueKey(const KeyEvent& key) {
 void App::render() {
   const auto size = consoleSize();
   std::ostringstream out;
-  clearConsole();
   out << "\x1b[?25l";
   out << kColorTitle << "HIMS Terminal" << kColorReset << "  ";
   out << kColorMuted << summaryLine() << kColorReset;
@@ -615,7 +1072,25 @@ void App::render() {
   renderMessage(out, size);
   renderStatusBar(out, size);
 
-  std::cout << out.str() << std::flush;
+  std::ostringstream screen;
+  screen << "\x1b[H";
+
+  int renderedLines = 0;
+  const auto frame = out.str();
+  for (char ch : frame) {
+    screen << ch;
+    if (ch == '\n') {
+      screen << "\x1b[K";
+      ++renderedLines;
+    }
+  }
+
+  while (renderedLines < size.rows) {
+    screen << "\x1b[K\n";
+    ++renderedLines;
+  }
+
+  std::cout << screen.str() << std::flush;
 }
 
 void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
@@ -628,50 +1103,64 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
 
   if (size.columns < 96) {
     std::vector<std::string> lines;
-    lines.push_back("Summary");
-    lines.push_back("  Parts: " + std::to_string(summary.itemCount) + "   Units: " + std::to_string(summary.totalUnits));
-    lines.push_back("  Low stock: " + std::to_string(summary.lowStockCount) + "   Missing metadata: " +
-                    std::to_string(summary.missingMetadataCount) + "   Unsynced: " +
-                    std::to_string(summary.unsyncedCount));
+    lines.push_back(styleText("Summary", kColorAccent));
+    lines.push_back(styleText("  Parts: " + std::to_string(summary.itemCount), kColorInfo));
+    lines.push_back(styleText("  Units: " + std::to_string(summary.totalUnits), kColorSuccess));
+    lines.push_back(styleText("  Low stock: " + std::to_string(summary.lowStockCount), kColorWarn));
+    lines.push_back(styleText("  Missing metadata: " + std::to_string(summary.missingMetadataCount), kColorDanger));
+    lines.push_back(styleText("  Unsynced: " + std::to_string(summary.unsyncedCount), kColorLabel));
     lines.push_back("");
-    lines.push_back("Scanner");
-    appendWrapped(lines, scannerUrl(), size.columns);
+    lines.push_back(styleText("Scanner", kColorTitle));
+    appendWrappedStyled(lines, scannerUrl(), size.columns, kColorLink);
     lines.push_back("");
-    lines.push_back("Inventory file");
-    appendWrapped(lines, inventoryPath_.string(), size.columns);
+    lines.push_back(styleText("Inventory file", kColorTitle));
+    appendWrappedStyled(lines, inventoryPath_.string(), size.columns, kColorInfo);
     lines.push_back("");
-    lines.push_back("Low-stock alerts");
+    lines.push_back(styleText("Low-stock alerts", kColorWarn));
     int alertCount = 0;
     for (const auto& item : store_.items()) {
       if (!item.lowStock()) {
         continue;
       }
-      lines.push_back("  - " + item.partName + " qty " + std::to_string(item.quantity) + " / " +
-                      std::to_string(item.reorderThreshold) + "  [" + item.category + "]");
+      appendWrappedStyled(lines,
+                          "  - " + item.partName + " qty " + std::to_string(item.quantity) + " / " +
+                              std::to_string(item.reorderThreshold) + "  [" + item.category + "]",
+                          size.columns, kColorWarn);
       if (++alertCount >= 4) {
         break;
       }
     }
     if (alertCount == 0) {
-      lines.push_back("  No low-stock items.");
+      lines.push_back(styleText("  No low-stock items.", kColorMuted));
     }
 
     lines.push_back("");
-    lines.push_back("Recent activity");
+    lines.push_back(styleText("Recent activity", kColorAccent));
     const auto activityCount = std::min<std::size_t>(activities_.size(), 5);
     for (std::size_t offset = 0; offset < activityCount; ++offset) {
       const auto& entry = activities_[activities_.size() - 1 - offset];
-      appendWrapped(lines,
-                    "  - " + nowTimestampString(entry.timestamp) + " | " + entry.kind + " | " + entry.message,
-                    size.columns);
+      const char* activityColor = kColorMuted;
+      if (entry.kind.find("scan") != std::string::npos) {
+        activityColor = kColorLink;
+      } else if (entry.kind.find("add") != std::string::npos) {
+        activityColor = kColorSuccess;
+      } else if (entry.kind.find("edit") != std::string::npos) {
+        activityColor = kColorInfo;
+      } else if (entry.kind == "system") {
+        activityColor = kColorLabel;
+      }
+      appendWrappedStyled(lines,
+                          "  - " + nowTimestampString(entry.timestamp) + " | " + entry.kind + " | " + entry.message,
+                          size.columns, activityColor);
     }
     if (activityCount == 0) {
-      lines.push_back("  No recent activity.");
+      lines.push_back(styleText("  No recent activity.", kColorMuted));
     }
 
     lines.push_back("");
-    lines.push_back("Quick actions");
-    appendWrapped(lines, "  [1] Stock browser   [2/s] Scanner   [3] Add item   [4] Reload   [/] Search   [q] Quit", size.columns);
+    lines.push_back(styleText("Quick actions", kColorAccent));
+    appendWrappedStyled(lines, "  [1] Stock browser   [2/s] Scanner   [3] Add item   [4] Reload   [/] Search   [q] Quit", size.columns,
+                        kColorDim);
 
     if (static_cast<int>(lines.size()) > contentRows) {
       lines.resize(static_cast<std::size_t>(contentRows));
@@ -735,7 +1224,8 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
     rightLines.push_back("  No recent activity.");
   }
 
-  renderColumns(out, leftLines, rightLines, leftWidth, rightWidth, contentRows, 4);
+  renderColumns(out, leftLines, rightLines, leftWidth, rightWidth, contentRows, 4, kColorInfo, kBgPanelLeft,
+                kColorMuted, kBgPanelRight);
 }
 
 void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
@@ -746,66 +1236,27 @@ void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
   out << kColorMuted << "(j/k or arrows to move, Enter detail, e edit, n new, +/- adjust)" << kColorReset << '\n';
   out << std::string(std::max(0, size.columns), '-') << '\n';
 
-  if (size.columns < 96) {
-    const int listHeight = std::max(4, contentRows / 2);
+  struct StockLine {
+    std::string text;
+    bool isHeader = false;
+    bool isMessage = false;
+    bool isSelected = false;
+    bool isLowStock = false;
+    bool isEven = false;
+  };
 
-    out << kColorMuted << "Items" << kColorReset << '\n';
-    if (filtered.empty()) {
-      out << "No items match \"" << searchQuery_ << "\".\n";
-    } else {
-      std::size_t visibleStart = 0;
-      if (selectedPosition_ >= static_cast<std::size_t>(listHeight)) {
-        visibleStart = selectedPosition_ - static_cast<std::size_t>(listHeight) + 1;
-      }
-      if (selectedPosition_ < visibleStart) {
-        visibleStart = selectedPosition_;
-      }
+  const bool compact = size.columns < 96;
+  const int listHeight = compact ? std::max(4, contentRows / 2) : std::max(4, contentRows - 1);
+  const int listWidth = compact ? std::max(0, size.columns) : std::max(36, (size.columns - 4) / 3);
+  const int detailWidth = compact ? std::max(40, size.columns - 4) : std::max(40, size.columns - listWidth - 4);
+  const int partWidth = std::max(12, listWidth - 21);
 
-      stockScroll_ = visibleStart;
+  std::vector<StockLine> listLines;
+  listLines.push_back({"Items", true});
+  listLines.push_back({"Part                          Category       Qty", true});
 
-      const int partWidth = std::max(12, size.columns - 21);
-      for (int row = 0; row < listHeight; ++row) {
-        const auto pos = visibleStart + static_cast<std::size_t>(row);
-        if (pos >= filtered.size()) {
-          break;
-        }
-
-        const auto& item = store_.items()[filtered[pos]];
-        const bool isSelected = pos == selectedPosition_;
-        std::ostringstream rowOut;
-        if (isSelected) {
-          rowOut << kColorSelect;
-        }
-        rowOut << (isSelected ? '>' : ' ') << ' ' << padRight(item.partName, partWidth) << "  "
-               << padRight(item.category, 11) << ' ';
-        if (item.lowStock()) {
-          rowOut << kColorWarn;
-        }
-        rowOut << std::setw(4) << item.quantity << kColorReset;
-        out << rowOut.str() << '\n';
-      }
-    }
-
-    out << '\n' << kColorMuted << "Detail" << kColorReset << '\n';
-    if (const auto* item = selectedItem()) {
-      out << itemDetailText(*item, std::max(40, size.columns - 4)) << '\n';
-    } else {
-      out << "No selection.\n";
-    }
-    return;
-  }
-
-  const int leftWidth = std::max(36, (size.columns - 4) / 3);
-  const int rightWidth = std::max(40, size.columns - leftWidth - 4);
-  const int listHeight = std::max(4, contentRows - 1);
-
-  std::vector<std::string> leftLines;
-  std::vector<std::string> rightLines;
-
-  leftLines.push_back("Items");
-  leftLines.push_back("Part                          Category       Qty");
   if (filtered.empty()) {
-    leftLines.push_back("No items match \"" + searchQuery_ + "\".");
+    listLines.push_back({"No items match \"" + searchQuery_ + "\".", false, true});
   } else {
     std::size_t visibleStart = 0;
     if (selectedPosition_ >= static_cast<std::size_t>(listHeight)) {
@@ -817,7 +1268,6 @@ void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
 
     stockScroll_ = visibleStart;
 
-    const int partWidth = std::max(12, leftWidth - 21);
     for (int row = 0; row < listHeight; ++row) {
       const auto pos = visibleStart + static_cast<std::size_t>(row);
       if (pos >= filtered.size()) {
@@ -825,24 +1275,88 @@ void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
       }
 
       const auto& item = store_.items()[filtered[pos]];
-      const bool isSelected = pos == selectedPosition_;
-      std::ostringstream rowOut;
-      rowOut << (isSelected ? '>' : ' ') << ' ' << padRight(item.partName, partWidth) << "  "
-             << padRight(item.category, 11) << ' ';
-      rowOut << std::setw(4) << item.quantity;
-      leftLines.push_back(rowOut.str());
+      std::ostringstream rowText;
+      rowText << (pos == selectedPosition_ ? '>' : ' ') << ' ' << padRight(item.partName, partWidth) << "  "
+              << padRight(item.category, 11) << ' ' << std::setw(4) << item.quantity;
+      listLines.push_back({rowText.str(), false, false, pos == selectedPosition_, item.lowStock(), row % 2 == 0});
     }
   }
 
-  rightLines.push_back("Detail");
+  std::vector<StockLine> detailLines;
+  detailLines.push_back({"Detail", true});
   if (const auto* item = selectedItem()) {
-    const auto detailLines = splitLines(itemDetailText(*item, rightWidth));
-    rightLines.insert(rightLines.end(), detailLines.begin(), detailLines.end());
+    const auto lines = splitLines(itemDetailText(*item, detailWidth));
+    for (const auto& line : lines) {
+      detailLines.push_back({line});
+    }
   } else {
-    rightLines.push_back("No selection.");
+    detailLines.push_back({"No selection.", false, true});
   }
 
-  renderColumns(out, leftLines, rightLines, leftWidth, rightWidth, contentRows, 4);
+  auto styleListLine = [&](const StockLine& line) {
+    if (line.isHeader) {
+      return styleCell(line.text, listWidth, kColorAccent, kBgPanelLeft);
+    }
+    if (line.isMessage) {
+      return styleCell(line.text, listWidth, kColorMuted, kBgPanelLeft);
+    }
+    if (line.isSelected) {
+      return styleCell(line.text, listWidth, kColorTitle, kBgRowSelected);
+    }
+    const char* fg = line.isLowStock ? kColorWarn : nullptr;
+    const char* bg = line.isEven ? kBgRowDark : kBgRowLight;
+    return styleCell(line.text, listWidth, fg, bg);
+  };
+
+  auto styleDetailLine = [&](const StockLine& line) {
+    if (line.isHeader) {
+      return styleCell(line.text, detailWidth, kColorAccent, kBgPanelRight);
+    }
+    if (line.isMessage) {
+      return styleCell(line.text, detailWidth, kColorMuted, kBgPanelRight);
+    }
+    if (line.text.rfind("Name: ", 0) == 0 || line.text.rfind("Manufacturer: ", 0) == 0 ||
+        line.text.rfind("Category: ", 0) == 0) {
+      return styleCell(line.text, detailWidth, kColorInfo, kBgPanelRight);
+    }
+    if (line.text.rfind("Quantity: ", 0) == 0 || line.text.rfind("Threshold: ", 0) == 0 ||
+        line.text.rfind("Status: ", 0) == 0) {
+      return styleCell(line.text, detailWidth, kColorSuccess, kBgPanelRight);
+    }
+    if (line.text.rfind("DigiKey: ", 0) == 0 || line.text.rfind("Datasheet: ", 0) == 0 ||
+        line.text.rfind("Product: ", 0) == 0) {
+      return styleCell(line.text, detailWidth, kColorLink, kBgPanelRight);
+    }
+    if (line.text.rfind("SKU: ", 0) == 0 || line.text.rfind("Updated: ", 0) == 0) {
+      return styleCell(line.text, detailWidth, kColorLabel, kBgPanelRight);
+    }
+    if (line.text == "Notes") {
+      return styleCell(line.text, detailWidth, kColorWarn, kBgPanelRight);
+    }
+    if (line.text == "Shortcuts") {
+      return styleCell(line.text, detailWidth, kColorDim, kBgPanelRight);
+    }
+    return styleCell(line.text, detailWidth, kColorMuted, kBgPanelRight);
+  };
+
+  if (compact) {
+    for (const auto& line : listLines) {
+      out << styleListLine(line) << '\n';
+    }
+    out << '\n';
+    for (const auto& line : detailLines) {
+      out << styleDetailLine(line) << '\n';
+    }
+    return;
+  }
+
+  const std::size_t maxRows = std::max(listLines.size(), detailLines.size());
+  for (std::size_t row = 0; row < maxRows; ++row) {
+    const auto left = row < listLines.size() ? styleListLine(listLines[row]) : styleCell("", listWidth, nullptr, kBgPanelLeft);
+    const auto right =
+        row < detailLines.size() ? styleDetailLine(detailLines[row]) : styleCell("", detailWidth, nullptr, kBgPanelRight);
+    out << left << "    " << right << '\n';
+  }
 }
 
 void App::renderDetail(std::ostringstream& out, const ConsoleSize& size) {
@@ -854,7 +1368,34 @@ void App::renderDetail(std::ostringstream& out, const ConsoleSize& size) {
 
   if (size.columns < 96) {
     if (const auto* item = selectedItem()) {
-      out << itemDetailText(*item, std::max(50, size.columns - 4));
+      std::vector<std::string> lines;
+      lines.push_back(styleText("Core details", kColorAccent));
+      lines.push_back(styleText("  Name: " + item->partName, kColorInfo));
+      lines.push_back(styleText("  Manufacturer: " + item->manufacturer, kColorInfo));
+      lines.push_back(styleText("  Category: " + item->category, kColorLabel));
+      lines.push_back(styleText("  Quantity: " + std::to_string(item->quantity), kColorSuccess));
+      lines.push_back(styleText("  Threshold: " + std::to_string(item->reorderThreshold), kColorWarn));
+      lines.push_back(styleText("  Location: " + item->location, kColorMuted));
+      lines.push_back(styleText("  Tags: " + renderTags(item->tags), kColorLabel));
+      lines.push_back(styleText("  Parameters: " + renderParameters(item->parameters), kColorInfo));
+      lines.push_back("");
+      lines.push_back(styleText("Metadata", kColorAccent));
+      lines.push_back(styleText("  DigiKey: " + renderUrl(item->digikeyPartNumber), kColorLink));
+      lines.push_back(styleText("  Datasheet: " + renderUrl(item->datasheetUrl), kColorLink));
+      lines.push_back(styleText("  Product: " + renderUrl(item->productUrl), kColorLink));
+      lines.push_back(styleText("  SKU: " + renderUrl(item->sku), kColorLabel));
+      lines.push_back(styleText("  Status: " + item->syncStatus, kColorSuccess));
+      lines.push_back(styleText("  Updated: " + nowTimestampString(item->lastUpdated), kColorMuted));
+      lines.push_back("");
+      lines.push_back(styleText("Notes", kColorWarn));
+      appendWrappedStyled(lines, item->notes, std::max(50, size.columns - 4), kColorMuted);
+      lines.push_back("");
+      lines.push_back(styleText("Shortcuts", kColorAccent));
+      appendWrappedStyled(lines, "e Edit   n New   + / - Quantity   Enter Open detail   / Search", std::max(50, size.columns - 4),
+                          kColorDim);
+      for (const auto& line : lines) {
+        out << line << '\n';
+      }
     } else {
       out << "No item selected.\n";
     }
@@ -896,34 +1437,37 @@ void App::renderDetail(std::ostringstream& out, const ConsoleSize& size) {
     rightLines.push_back("Press Esc to return to stock.");
   }
 
-  renderColumns(out, leftLines, rightLines, leftWidth, rightWidth, contentRows, 4);
+  renderColumns(out, leftLines, rightLines, leftWidth, rightWidth, contentRows, 4, kColorInfo, kBgPanelLeft,
+                kColorMuted, kBgPanelRight);
 }
 
 void App::renderSearchBar(std::ostringstream& out, const ConsoleSize&) {
-  out << '\n' << kColorMuted << "Search" << kColorReset << "  ";
+  out << '\n' << kColorAccent << "Search" << kColorReset << "  ";
   if (inputMode_ == InputMode::Search) {
-    out << kColorAccent << '/' << inputBuffer_ << '_' << kColorReset;
+    out << kColorLink << '/' << inputBuffer_ << '_' << kColorReset;
   } else {
-    out << '/' << searchQuery_;
+    out << kColorMuted << '/' << searchQuery_ << kColorReset;
   }
   out << '\n';
 
   if (inputMode_ == InputMode::EditFieldMenu) {
-    out << kColorMuted << "Edit fields" << kColorReset << '\n';
+    out << kColorAccent << "Edit fields" << kColorReset << '\n';
     for (std::size_t index = 0; index < menuOptions_.size(); ++index) {
       if (static_cast<int>(index) == fieldMenuIndex_) {
         out << kColorSelect;
       }
-      out << "  [" << (index < 9 ? std::to_string(index + 1) : "0") << "] " << menuOptions_[index].label << kColorReset << '\n';
+      out << "  [" << (index < 9 ? std::to_string(index + 1) : "0") << "] " << menuOptions_[index].label
+          << kColorReset << '\n';
     }
   } else if (inputMode_ == InputMode::EditValue) {
-    out << kColorMuted << "Input" << kColorReset << "  " << activePrompt() << inputBuffer_ << '_' << '\n';
+    out << kColorAccent << "Input" << kColorReset << "  " << kColorLabel << activePrompt() << kColorReset
+        << kColorLink << inputBuffer_ << '_' << kColorReset << '\n';
   }
 }
 
 void App::renderStatusBar(std::ostringstream& out, const ConsoleSize& size) {
   out << std::string(size.columns, '-') << '\n';
-  out << kColorMuted << scannerUrl() << kColorReset << "  ";
+  out << kColorLink << scannerUrl() << kColorReset << "  ";
   out << kColorDim << "Dashboard: Tab/1  Stock: arrows/jk  Detail: Enter  Edit: e  New: n  Scanner: s  Quit: q" << kColorReset << '\n';
 }
 
