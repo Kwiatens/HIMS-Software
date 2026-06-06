@@ -6,6 +6,7 @@
 #include <iostream>
 
 using namespace hims;
+using namespace std;
 
 int main() {
   {
@@ -65,10 +66,10 @@ int main() {
   }
 
   {
-    const char* profile = std::getenv("USERPROFILE");
+    const char* profile = getenv("USERPROFILE");
     if (profile != nullptr && *profile != '\0') {
-      const auto dbPath = std::filesystem::path(profile) / "Documents" / "HIMS" / "inventory.db";
-      if (std::filesystem::exists(dbPath)) {
+      const auto dbPath = filesystem::path(profile) / "Documents" / "HIMS" / "inventory.db";
+      if (filesystem::exists(dbPath)) {
         InventoryStore store;
         const auto loaded = store.load(dbPath);
         if (!loaded) {
@@ -81,6 +82,7 @@ int main() {
     }
   }
 
-  std::cout << "HIMS core tests passed\n";
+  cout << "HIMS core tests passed\n";
   return 0;
 }
+

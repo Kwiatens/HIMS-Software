@@ -5,6 +5,8 @@
 
 namespace hims {
 
+using namespace std;
+
 struct ConsoleSize {
   int columns = 120;
   int rows = 40;
@@ -52,9 +54,10 @@ ConsoleSize consoleSize();
 void clearConsole();
 void hideCursor();
 void showCursor();
-void setConsoleTitle(const std::string& title);
-bool openUrl(const std::string& url);
-std::vector<std::string> localAddresses();
-std::vector<KeyEvent> pollKeys();
+void setConsoleTitle(const string& title);
+bool openUrl(const string& url);
+vector<string> localAddresses();
+vector<KeyEvent> pollKeys();
 
 }  // namespace hims
+

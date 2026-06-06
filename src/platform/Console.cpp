@@ -22,6 +22,8 @@
 
 namespace hims {
 
+using namespace std;
+
 namespace {
 
 bool ensureVirtualTerminal() {
@@ -40,7 +42,7 @@ bool ensureVirtualTerminal() {
 }
 
 void writeEscapeSequence(const char* sequence) {
-  std::cout << sequence;
+  cout << sequence;
 }
 
 void setCursorVisibility(bool visible) {
@@ -84,7 +86,7 @@ KeyEvent translateSpecialKey(int code) {
   }
 }
 
-std::string ipv4ToString(const sockaddr_in& address) {
+string ipv4ToString(const sockaddr_in& address) {
   char buffer[INET_ADDRSTRLEN] = {};
   if (InetNtopA(AF_INET, &address.sin_addr, buffer, sizeof(buffer)) == nullptr) {
     return {};
@@ -120,7 +122,7 @@ void ConsoleSession::restore() {
   showCursor();
   if (alternateScreen_) {
     writeEscapeSequence("\x1b[?1049l");
-    std::cout << std::flush;
+    cout << flush;
     alternateScreen_ = false;
   }
   active_ = false;
@@ -143,7 +145,7 @@ ConsoleSize consoleSize() {
 }
 
 void clearConsole() {
-  std::cout << "\x1b[2J\x1b[3J\x1b[H";
+  cout << "\x1b[2J\x1b[3J\x1b[H";
 }
 
 void hideCursor() {
@@ -154,17 +156,17 @@ void showCursor() {
   setCursorVisibility(true);
 }
 
-void setConsoleTitle(const std::string& title) {
+void setConsoleTitle(const string& title) {
   SetConsoleTitleA(title.c_str());
 }
 
-bool openUrl(const std::string& url) {
-  const auto result = reinterpret_cast<std::intptr_t>(ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+bool openUrl(const string& url) {
+  const auto result = reinterpret_cast<intptr_t>(ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
   return result > 32;
 }
 
-std::vector<std::string> localAddresses() {
-  std::vector<std::string> addresses;
+vector<string> localAddresses() {
+  vector<string> addresses;
 
   WSADATA data{};
   if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
@@ -188,7 +190,7 @@ std::vector<std::string> localAddresses() {
       const auto* address = reinterpret_cast<sockaddr_in*>(current->ai_addr);
       const auto ip = ipv4ToString(*address);
       if (!ip.empty() && ip != "127.0.0.1" &&
-          std::find(addresses.begin(), addresses.end(), ip) == addresses.end()) {
+          find(addresses.begin(), addresses.end(), ip) == addresses.end()) {
         addresses.push_back(ip);
       }
     }
@@ -204,8 +206,8 @@ std::vector<std::string> localAddresses() {
   return addresses;
 }
 
-std::vector<KeyEvent> pollKeys() {
-  std::vector<KeyEvent> keys;
+vector<KeyEvent> pollKeys() {
+  vector<KeyEvent> keys;
   while (_kbhit()) {
     const int first = _getch();
     if (first == 0 || first == 224) {
@@ -241,3 +243,4 @@ std::vector<KeyEvent> pollKeys() {
 }
 
 }  // namespace hims
+

@@ -1,3 +1,6 @@
+// HIMS - Hardware Inventory Management System
+// Terminal application controller and shared app state.
+
 #pragma once
 
 #include "core/Inventory.h"
@@ -13,6 +16,8 @@
 #include <vector>
 
 namespace hims {
+
+using namespace std;
 
 class App {
  public:
@@ -51,14 +56,14 @@ class App {
   };
 
   struct FieldOption {
-    std::string label;
+    string label;
     EditField field;
   };
 
   struct WorkingCopy {
     InventoryItem item;
     bool isNew = false;
-    std::size_t originalIndex = 0;
+    size_t originalIndex = 0;
   };
 
   void loadState();
@@ -73,12 +78,12 @@ class App {
   void handleEditValueKey(const KeyEvent& key);
 
   void render();
-  void renderDashboard(std::ostringstream& out, const ConsoleSize& size);
-  void renderStock(std::ostringstream& out, const ConsoleSize& size);
-  void renderDetail(std::ostringstream& out, const ConsoleSize& size);
-  void renderSearchBar(std::ostringstream& out, const ConsoleSize& size);
-  void renderStatusBar(std::ostringstream& out, const ConsoleSize& size);
-  void renderMessage(std::ostringstream& out, const ConsoleSize& size);
+  void renderDashboard(ostringstream& out, const ConsoleSize& size);
+  void renderStock(ostringstream& out, const ConsoleSize& size);
+  void renderDetail(ostringstream& out, const ConsoleSize& size);
+  void renderSearchBar(ostringstream& out, const ConsoleSize& size);
+  void renderStatusBar(ostringstream& out, const ConsoleSize& size);
+  void renderMessage(ostringstream& out, const ConsoleSize& size);
 
   ftxui::Element renderUi() const;
   ftxui::Element renderDashboardUi() const;
@@ -89,13 +94,13 @@ class App {
   ftxui::Element renderMessageUi() const;
   ftxui::Element renderPageUi() const;
 
-  void setMessage(std::string text, int seconds = 3);
+  void setMessage(string text, int seconds = 3);
   bool messageVisible() const;
   void clearMessageIfExpired();
   void markDirty();
 
-  std::vector<std::size_t> filteredIndices() const;
-  std::size_t selectedIndex() const;
+  vector<size_t> filteredIndices() const;
+  size_t selectedIndex() const;
   InventoryItem* selectedItem();
   const InventoryItem* selectedItem() const;
   void syncSelectionToFilter();
@@ -106,45 +111,46 @@ class App {
   void cancelInput();
   void beginEditCurrentItem(bool createNew);
   void openFieldMenu();
-  void commitEditField(EditField field, const std::string& value);
+  void commitEditField(EditField field, const string& value);
   void saveWorkingCopy();
   void adjustQuantity(int delta);
-  void logActivity(const std::string& kind, const std::string& message);
-  void pushScanCode(const std::string& code);
+  void logActivity(const string& kind, const string& message);
+  void pushScanCode(const string& code);
   void processScans();
-  void openCurrentUrl(const std::string& url, const std::string& label);
-  std::string fieldLabel(EditField field) const;
-  std::string currentFieldValue(EditField field) const;
-  std::vector<FieldOption> fieldOptions() const;
-  std::string itemDetailText(const InventoryItem& item, int width) const;
-  std::string summaryLine() const;
-  std::string scannerUrl() const;
-  std::string activePrompt() const;
+  void openCurrentUrl(const string& url, const string& label);
+  string fieldLabel(EditField field) const;
+  string currentFieldValue(EditField field) const;
+  vector<FieldOption> fieldOptions() const;
+  string itemDetailText(const InventoryItem& item, int width) const;
+  string summaryLine() const;
+  string scannerUrl() const;
+  string activePrompt() const;
 
   InventoryStore store_;
-  std::vector<ActivityEntry> activities_;
+  vector<ActivityEntry> activities_;
   LocalHttpServer server_;
-  std::filesystem::path root_;
-  std::filesystem::path dataPath_;
-  std::filesystem::path inventoryPath_;
-  std::filesystem::path activityPath_;
+  filesystem::path root_;
+  filesystem::path dataPath_;
+  filesystem::path inventoryPath_;
+  filesystem::path activityPath_;
   Page page_ = Page::Dashboard;
   InputMode inputMode_ = InputMode::None;
-  std::string searchQuery_;
-  std::string inputBuffer_;
-  std::string message_;
-  std::time_t messageUntil_ = 0;
-  std::size_t selectedPosition_ = 0;
-  std::size_t stockScroll_ = 0;
-  std::size_t detailScroll_ = 0;
-  std::vector<std::string> scanQueue_;
-  std::mutex scanMutex_;
+  string searchQuery_;
+  string inputBuffer_;
+  string message_;
+  time_t messageUntil_ = 0;
+  size_t selectedPosition_ = 0;
+  size_t stockScroll_ = 0;
+  size_t detailScroll_ = 0;
+  vector<string> scanQueue_;
+  mutex scanMutex_;
   bool running_ = true;
   bool dirty_ = true;
   ConsoleSize lastDrawSize_{};
   WorkingCopy workingCopy_;
   int fieldMenuIndex_ = 0;
-  std::vector<FieldOption> menuOptions_;
+  vector<FieldOption> menuOptions_;
 };
 
 }  // namespace hims
+

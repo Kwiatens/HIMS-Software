@@ -1,3 +1,6 @@
+// HIMS - Hardware Inventory Management System
+// Terminal application controller and app-level state management.
+
 #include "App.h"
 
 #include "platform/DigiKeyApi.h"
@@ -22,6 +25,8 @@
 
 namespace hims {
 
+using namespace std;
+
 namespace {
 
 constexpr const char* kColorReset = "\x1b[0m";
@@ -42,10 +47,10 @@ constexpr const char* kBgRowDark = "\x1b[48;5;232m";
 constexpr const char* kBgRowLight = "\x1b[48;5;236m";
 constexpr const char* kBgRowSelected = "\x1b[48;5;24m";
 
-std::string padRight(std::string value, int width);
+string padRight(string value, int width);
 
-std::string styleText(const std::string& text, const char* fg = nullptr, const char* bg = nullptr) {
-  std::ostringstream out;
+string styleText(const string& text, const char* fg = nullptr, const char* bg = nullptr) {
+  ostringstream out;
   if (bg != nullptr) {
     out << bg;
   }
@@ -56,7 +61,7 @@ std::string styleText(const std::string& text, const char* fg = nullptr, const c
   return out.str();
 }
 
-std::string styleCell(const std::string& text, int width, const char* fg = nullptr, const char* bg = nullptr) {
+string styleCell(const string& text, int width, const char* fg = nullptr, const char* bg = nullptr) {
   return styleText(padRight(text, width), fg, bg);
 }
 
@@ -120,8 +125,8 @@ ftxui::Color uiRowSelectedBg() {
   return ftxui::Color::RGB(25, 70, 110);
 }
 
-ftxui::Element styledText(const std::string& text, std::optional<ftxui::Color> fg = std::nullopt,
-                          std::optional<ftxui::Color> bg = std::nullopt) {
+ftxui::Element styledText(const string& text, optional<ftxui::Color> fg = nullopt,
+                          optional<ftxui::Color> bg = nullopt) {
   auto element = ftxui::text(text);
   if (fg) {
     element = element | ftxui::color(*fg);
@@ -132,8 +137,8 @@ ftxui::Element styledText(const std::string& text, std::optional<ftxui::Color> f
   return element;
 }
 
-ftxui::Element fullLine(const std::string& text, std::optional<ftxui::Color> fg = std::nullopt,
-                        std::optional<ftxui::Color> bg = std::nullopt) {
+ftxui::Element fullLine(const string& text, optional<ftxui::Color> fg = nullopt,
+                        optional<ftxui::Color> bg = nullopt) {
   auto element = ftxui::hbox({ftxui::text(text), ftxui::filler()});
   if (fg) {
     element = element | ftxui::color(*fg);
@@ -144,17 +149,17 @@ ftxui::Element fullLine(const std::string& text, std::optional<ftxui::Color> fg 
   return element;
 }
 
-ftxui::Element linesBlock(const std::vector<std::string>& lines, std::optional<ftxui::Color> fg = std::nullopt,
-                          std::optional<ftxui::Color> bg = std::nullopt) {
+ftxui::Element linesBlock(const vector<string>& lines, optional<ftxui::Color> fg = nullopt,
+                          optional<ftxui::Color> bg = nullopt) {
   ftxui::Elements elements;
   elements.reserve(lines.size());
   for (const auto& line : lines) {
     elements.push_back(fullLine(line, fg, bg));
   }
-  return ftxui::vbox(std::move(elements));
+  return ftxui::vbox(move(elements));
 }
 
-ftxui::Element bulletLine(const std::string& label, const std::string& value, ftxui::Color labelColor,
+ftxui::Element bulletLine(const string& label, const string& value, ftxui::Color labelColor,
                           ftxui::Color valueColor) {
   return ftxui::hbox({
       styledText(label, labelColor),
@@ -163,10 +168,10 @@ ftxui::Element bulletLine(const std::string& label, const std::string& value, ft
   });
 }
 
-ftxui::Element panel(const std::string& title, ftxui::Elements body, std::optional<ftxui::Color> titleColor = std::nullopt,
-                     std::optional<ftxui::Color> borderColor = std::nullopt) {
+ftxui::Element panel(const string& title, ftxui::Elements body, optional<ftxui::Color> titleColor = nullopt,
+                     optional<ftxui::Color> borderColor = nullopt) {
   auto titleElement = styledText(title, titleColor);
-  auto element = ftxui::window(titleElement, ftxui::vbox(std::move(body)));
+  auto element = ftxui::window(titleElement, ftxui::vbox(move(body)));
   if (borderColor) {
     element = element | ftxui::color(*borderColor);
   }
@@ -179,25 +184,25 @@ ftxui::Element quantityBadge(int quantity, bool selected = false) {
                            : (quantity <= 0 ? ftxui::Color::RGB(52, 22, 22)
                                             : (quantity <= 5 ? ftxui::Color::RGB(58, 42, 14)
                                                              : ftxui::Color::RGB(18, 44, 28)));
-  return ftxui::text(" QTY " + std::to_string(quantity) + " ") | ftxui::bold | ftxui::color(fg) | ftxui::bgcolor(bg);
+  return ftxui::text(" QTY " + to_string(quantity) + " ") | ftxui::bold | ftxui::color(fg) | ftxui::bgcolor(bg);
 }
 
-std::string displayCategory(const std::string& category) {
+string displayCategory(const string& category) {
   auto value = trim(category);
   const auto slash = value.find(" / ");
-  if (slash != std::string::npos) {
+  if (slash != string::npos) {
     value = trim(value.substr(0, slash));
   }
 
   const auto openParen = value.find(" (");
-  if (openParen != std::string::npos) {
+  if (openParen != string::npos) {
     value = trim(value.substr(0, openParen));
   }
 
   return value;
 }
 
-std::string ellipsize(const std::string& value, std::size_t maxLength) {
+string ellipsize(const string& value, size_t maxLength) {
   if (maxLength == 0 || value.size() <= maxLength) {
     return value;
   }
@@ -253,7 +258,7 @@ KeyEvent translateEvent(const ftxui::Event& event) {
   return {KeyType::Unknown, '\0'};
 }
 
-std::string padRight(std::string value, int width) {
+string padRight(string value, int width) {
   if (width <= 0) {
     return {};
   }
@@ -263,20 +268,20 @@ std::string padRight(std::string value, int width) {
     }
     return value.substr(0, width - 3) + "...";
   }
-  value.append(static_cast<std::size_t>(width - static_cast<int>(value.size())), ' ');
+  value.append(static_cast<size_t>(width - static_cast<int>(value.size())), ' ');
   return value;
 }
 
-std::vector<std::string> splitLines(const std::string& text) {
-  std::vector<std::string> lines;
-  std::istringstream input(text);
-  std::string line;
+vector<string> splitLines(const string& text) {
+  vector<string> lines;
+  istringstream input(text);
+  string line;
 
-  while (std::getline(input, line)) {
+  while (getline(input, line)) {
     if (!line.empty() && line.back() == '\r') {
       line.pop_back();
     }
-    lines.push_back(std::move(line));
+    lines.push_back(move(line));
   }
 
   if (lines.empty()) {
@@ -286,15 +291,15 @@ std::vector<std::string> splitLines(const std::string& text) {
   return lines;
 }
 
-std::vector<std::string> wrapText(const std::string& text, int width) {
-  std::vector<std::string> lines;
+vector<string> wrapText(const string& text, int width) {
+  vector<string> lines;
   if (width <= 0) {
     return lines;
   }
 
-  std::istringstream words(text);
-  std::string word;
-  std::string line;
+  istringstream words(text);
+  string word;
+  string line;
 
   while (words >> word) {
     if (static_cast<int>(line.size() + word.size() + 1) > width && !line.empty()) {
@@ -319,41 +324,41 @@ std::vector<std::string> wrapText(const std::string& text, int width) {
   return lines;
 }
 
-void renderColumns(std::ostringstream& out, const std::vector<std::string>& leftLines,
-                   const std::vector<std::string>& rightLines, int leftWidth, int rightWidth, int maxRows,
+void renderColumns(ostringstream& out, const vector<string>& leftLines,
+                   const vector<string>& rightLines, int leftWidth, int rightWidth, int maxRows,
                    int gap = 4, const char* leftFg = nullptr, const char* leftBg = nullptr,
                    const char* rightFg = nullptr, const char* rightBg = nullptr) {
-  const int rowCount = std::min(
+  const int rowCount = min(
       maxRows,
-      std::max(static_cast<int>(leftLines.size()), static_cast<int>(rightLines.size())));
+      max(static_cast<int>(leftLines.size()), static_cast<int>(rightLines.size())));
 
   for (int row = 0; row < rowCount; ++row) {
-    const auto left = row < static_cast<int>(leftLines.size()) ? leftLines[static_cast<std::size_t>(row)] : "";
-    const auto right = row < static_cast<int>(rightLines.size()) ? rightLines[static_cast<std::size_t>(row)] : "";
-    out << styleCell(left, leftWidth, leftFg, leftBg) << std::string(static_cast<std::size_t>(gap), ' ')
+    const auto left = row < static_cast<int>(leftLines.size()) ? leftLines[static_cast<size_t>(row)] : "";
+    const auto right = row < static_cast<int>(rightLines.size()) ? rightLines[static_cast<size_t>(row)] : "";
+    out << styleCell(left, leftWidth, leftFg, leftBg) << string(static_cast<size_t>(gap), ' ')
         << styleCell(right, rightWidth, rightFg, rightBg) << '\n';
   }
 }
 
-void appendWrapped(std::vector<std::string>& lines, const std::string& text, int width) {
+void appendWrapped(vector<string>& lines, const string& text, int width) {
   const auto wrapped = wrapText(text, width);
   lines.insert(lines.end(), wrapped.begin(), wrapped.end());
 }
 
-void appendWrappedStyled(std::vector<std::string>& lines, const std::string& text, int width, const char* fg) {
+void appendWrappedStyled(vector<string>& lines, const string& text, int width, const char* fg) {
   const auto wrapped = wrapText(text, width);
   for (const auto& line : wrapped) {
     lines.push_back(styleText(line, fg));
   }
 }
 
-std::string joinTags(const std::vector<std::string>& tags) {
+string joinTags(const vector<string>& tags) {
   return join(tags, ',');
 }
 
-std::vector<std::string> splitFlexible(const std::string& text) {
-  std::vector<std::string> values;
-  std::string current;
+vector<string> splitFlexible(const string& text) {
+  vector<string> values;
+  string current;
   for (char ch : text) {
     if (ch == ',' || ch == ';' || ch == '\n') {
       current = trim(current);
@@ -374,11 +379,11 @@ std::vector<std::string> splitFlexible(const std::string& text) {
   return values;
 }
 
-std::vector<Parameter> parseParameters(const std::string& text) {
-  std::vector<Parameter> values;
+vector<Parameter> parseParameters(const string& text) {
+  vector<Parameter> values;
   for (const auto& entry : splitFlexible(text)) {
     const auto equalsPos = entry.find('=');
-    if (equalsPos == std::string::npos) {
+    if (equalsPos == string::npos) {
       continue;
     }
     values.push_back({trim(entry.substr(0, equalsPos)), trim(entry.substr(equalsPos + 1))});
@@ -386,20 +391,20 @@ std::vector<Parameter> parseParameters(const std::string& text) {
   return values;
 }
 
-std::string renderTags(const std::vector<std::string>& tags) {
+string renderTags(const vector<string>& tags) {
   if (tags.empty()) {
     return "-";
   }
   return ellipsize(join(tags, ','), 32);
 }
 
-std::string renderParameters(const std::vector<Parameter>& parameters) {
+string renderParameters(const vector<Parameter>& parameters) {
   if (parameters.empty()) {
     return "-";
   }
 
-  std::ostringstream out;
-  for (std::size_t index = 0; index < parameters.size(); ++index) {
+  ostringstream out;
+  for (size_t index = 0; index < parameters.size(); ++index) {
     if (index > 0) {
       out << "; ";
     }
@@ -408,7 +413,7 @@ std::string renderParameters(const std::vector<Parameter>& parameters) {
   return out.str();
 }
 
-std::string renderUrl(const std::string& url) {
+string renderUrl(const string& url) {
   if (url.empty()) {
     return "-";
   }
@@ -416,56 +421,56 @@ std::string renderUrl(const std::string& url) {
 }
 
 struct DetailField {
-  std::string label;
-  std::string value;
+  string label;
+  string value;
   ftxui::Color labelColor;
   ftxui::Color valueColor;
 };
 
-std::string normalizeKey(std::string value) {
-  std::string normalized;
+string normalizeKey(string value) {
+  string normalized;
   normalized.reserve(value.size());
   for (unsigned char ch : value) {
-    if (std::isalnum(ch)) {
-      normalized.push_back(static_cast<char>(std::tolower(ch)));
+    if (isalnum(ch)) {
+      normalized.push_back(static_cast<char>(tolower(ch)));
     }
   }
   return normalized;
 }
 
-bool categoryContains(const InventoryItem& item, std::initializer_list<const char*> needles) {
+bool categoryContains(const InventoryItem& item, initializer_list<const char*> needles) {
   const auto category = normalizeKey(displayCategory(item.category));
   for (const auto* needle : needles) {
     const auto normalizedNeedle = normalizeKey(needle);
-    if (category.find(normalizedNeedle) != std::string::npos || normalizedNeedle.find(category) != std::string::npos) {
+    if (category.find(normalizedNeedle) != string::npos || normalizedNeedle.find(category) != string::npos) {
       return true;
     }
   }
   return false;
 }
 
-bool parameterLabelMatches(const std::string& lhs, const std::string& rhs) {
+bool parameterLabelMatches(const string& lhs, const string& rhs) {
   const auto normalizedLhs = normalizeKey(lhs);
   const auto normalizedRhs = normalizeKey(rhs);
-  return normalizedLhs == normalizedRhs || normalizedLhs.find(normalizedRhs) != std::string::npos ||
-         normalizedRhs.find(normalizedLhs) != std::string::npos;
+  return normalizedLhs == normalizedRhs || normalizedLhs.find(normalizedRhs) != string::npos ||
+         normalizedRhs.find(normalizedLhs) != string::npos;
 }
 
-bool looksLikePackagingValue(const std::string& value) {
+bool looksLikePackagingValue(const string& value) {
   const auto normalized = normalizeKey(value);
   if (normalized.empty()) {
     return false;
   }
 
-  static const std::initializer_list<const char*> kPackagingTokens = {
+  static const initializer_list<const char*> kPackagingTokens = {
       "tapeandreel", "cuttape", "digireel", "tube", "tray", "bulk", "bag", "strip", "ammo", "box", "loose",
       "pack", "reel"};
-  return std::any_of(kPackagingTokens.begin(), kPackagingTokens.end(), [&](const char* token) {
-    return normalized == token || normalized.find(token) != std::string::npos;
+  return any_of(kPackagingTokens.begin(), kPackagingTokens.end(), [&](const char* token) {
+    return normalized == token || normalized.find(token) != string::npos;
   });
 }
 
-const Parameter* findParameter(const std::vector<Parameter>& parameters, std::initializer_list<const char*> names) {
+const Parameter* findParameter(const vector<Parameter>& parameters, initializer_list<const char*> names) {
   for (const auto* name : names) {
     for (const auto& parameter : parameters) {
       if (parameterLabelMatches(parameter.name, name)) {
@@ -476,17 +481,17 @@ const Parameter* findParameter(const std::vector<Parameter>& parameters, std::in
   return nullptr;
 }
 
-std::optional<std::string> parameterValue(const InventoryItem& item, std::initializer_list<const char*> names) {
+optional<string> parameterValue(const InventoryItem& item, initializer_list<const char*> names) {
   if (const auto* parameter = findParameter(item.parameters, names); parameter != nullptr) {
     const auto value = trim(parameter->value);
     if (!value.empty() && !looksLikePackagingValue(value)) {
       return value;
     }
   }
-  return std::nullopt;
+  return nullopt;
 }
 
-std::string prettyLabel(const std::string& label) {
+string prettyLabel(const string& label) {
   const auto trimmed = trim(label);
   if (!trimmed.empty()) {
     return trimmed;
@@ -494,19 +499,19 @@ std::string prettyLabel(const std::string& label) {
   return "Value";
 }
 
-std::vector<DetailField> electricalFieldsForItem(const InventoryItem& item) {
-  std::vector<DetailField> fields;
-  const auto addField = [&](const std::string& label, std::optional<std::string> value) {
+vector<DetailField> electricalFieldsForItem(const InventoryItem& item) {
+  vector<DetailField> fields;
+  const auto addField = [&](const string& label, optional<string> value) {
     if (value && !trim(*value).empty()) {
       fields.push_back({label + ": ", *value, uiLabelColor(), uiTitleColor()});
     }
   };
-  const auto addValueAndPackage = [&](const std::string& label, std::optional<std::string> value,
-                                      std::optional<std::string> package) {
-    addField(label, std::move(value));
-    addField("Package", std::move(package));
+  const auto addValueAndPackage = [&](const string& label, optional<string> value,
+                                      optional<string> package) {
+    addField(label, move(value));
+    addField("Package", move(package));
   };
-  const auto hasParameter = [&](std::initializer_list<const char*> names) {
+  const auto hasParameter = [&](initializer_list<const char*> names) {
     return findParameter(item.parameters, names) != nullptr;
   };
 
@@ -695,8 +700,8 @@ std::vector<DetailField> electricalFieldsForItem(const InventoryItem& item) {
     return fields;
   }
 
-  std::optional<std::string> primaryValue;
-  std::optional<std::string> primaryLabel;
+  optional<string> primaryValue;
+  optional<string> primaryLabel;
   for (const auto& parameter : item.parameters) {
     const auto label = prettyLabel(parameter.name);
     if (normalizeKey(label) == "package") {
@@ -720,39 +725,39 @@ std::vector<DetailField> electricalFieldsForItem(const InventoryItem& item) {
   return fields;
 }
 
-std::vector<DetailField> stockPreviewFields(const InventoryItem& item) {
-  std::vector<DetailField> fields;
+vector<DetailField> stockPreviewFields(const InventoryItem& item) {
+  vector<DetailField> fields;
   fields.push_back({"Name: ", item.partName, uiInfoColor(), uiTitleColor()});
   fields.push_back({"Manufacturer: ", item.manufacturer, uiInfoColor(), uiTitleColor()});
-  fields.push_back({"Quantity: ", std::to_string(item.quantity), uiSuccessColor(), uiTitleColor()});
+  fields.push_back({"Quantity: ", to_string(item.quantity), uiSuccessColor(), uiTitleColor()});
 
   const auto electricalFields = electricalFieldsForItem(item);
   fields.insert(fields.end(), electricalFields.begin(), electricalFields.end());
   return fields;
 }
 
-std::vector<DetailField> detailCoreFields(const InventoryItem& item) {
+vector<DetailField> detailCoreFields(const InventoryItem& item) {
   return {
       {"Name: ", item.partName, uiInfoColor(), uiTitleColor()},
       {"Manufacturer: ", item.manufacturer, uiInfoColor(), uiTitleColor()},
       {"Category: ", displayCategory(item.category), uiLabelColor(), uiTitleColor()},
-      {"Quantity: ", std::to_string(item.quantity), uiSuccessColor(), uiTitleColor()},
-      {"Threshold: ", std::to_string(item.reorderThreshold), uiWarnColor(), uiTitleColor()},
+      {"Quantity: ", to_string(item.quantity), uiSuccessColor(), uiTitleColor()},
+      {"Threshold: ", to_string(item.reorderThreshold), uiWarnColor(), uiTitleColor()},
       {"Location: ", item.location, uiMutedColor(), uiTitleColor()},
   };
 }
 
 ftxui::Element detailFieldLine(const DetailField& field, int width) {
-  const int valueWidth = std::max(0, width - static_cast<int>(field.label.size()) - 1);
+  const int valueWidth = max(0, width - static_cast<int>(field.label.size()) - 1);
   return ftxui::hbox({
              styledText(field.label, field.labelColor),
-             styledText(ellipsize(field.value, static_cast<std::size_t>(valueWidth)), field.valueColor),
+             styledText(ellipsize(field.value, static_cast<size_t>(valueWidth)), field.valueColor),
              ftxui::filler(),
          }) |
          ftxui::size(ftxui::WIDTH, ftxui::EQUAL, width);
 }
 
-bool upsertParameter(std::vector<Parameter>& parameters, const std::string& name, const std::string& value) {
+bool upsertParameter(vector<Parameter>& parameters, const string& name, const string& value) {
   const auto trimmedValue = trim(value);
   if (trimmedValue.empty()) {
     return false;
@@ -786,7 +791,7 @@ bool mergeDigiKeyMetadata(InventoryItem& item, const DigiKeyProductDetails& deta
   };
   normalizePackageLabels();
 
-  const auto assignIfUseful = [&](std::string& target, const std::string& value, bool replaceUnknown = false) {
+  const auto assignIfUseful = [&](string& target, const string& value, bool replaceUnknown = false) {
     const auto trimmed = trim(value);
     if (trimmed.empty()) {
       return;
@@ -831,57 +836,57 @@ bool mergeDigiKeyMetadata(InventoryItem& item, const DigiKeyProductDetails& deta
   }
 
   if (changed) {
-    item.lastUpdated = std::time(nullptr);
+    item.lastUpdated = time(nullptr);
   }
 
   return changed;
 }
 
-std::filesystem::path documentsHimsPath() {
-  if (const char* profile = std::getenv("USERPROFILE"); profile != nullptr && *profile != '\0') {
-    return std::filesystem::path(profile) / "Documents" / "HIMS";
+filesystem::path documentsHimsPath() {
+  if (const char* profile = getenv("USERPROFILE"); profile != nullptr && *profile != '\0') {
+    return filesystem::path(profile) / "Documents" / "HIMS";
   }
-  return std::filesystem::current_path() / "Documents" / "HIMS";
+  return filesystem::current_path() / "Documents" / "HIMS";
 }
 
-std::filesystem::path legacyDatabasePath() {
-  const auto githubRoot = std::filesystem::current_path().parent_path().parent_path();
+filesystem::path legacyDatabasePath() {
+  const auto githubRoot = filesystem::current_path().parent_path().parent_path();
   return githubRoot / "Kwiatens Stock Management System" / "KwiatensStockManagementSystem" / "data" / "kwiatens-stock.db";
 }
 
-void copyDatabaseSidecar(const std::filesystem::path& sourceBase, const std::filesystem::path& destinationBase,
-                         const std::string& suffix) {
-  const auto source = std::filesystem::path(sourceBase.string() + suffix);
-  const auto destination = std::filesystem::path(destinationBase.string() + suffix);
-  std::error_code error;
-  if (std::filesystem::exists(source, error)) {
-    std::filesystem::copy_file(source, destination, std::filesystem::copy_options::overwrite_existing, error);
+void copyDatabaseSidecar(const filesystem::path& sourceBase, const filesystem::path& destinationBase,
+                         const string& suffix) {
+  const auto source = filesystem::path(sourceBase.string() + suffix);
+  const auto destination = filesystem::path(destinationBase.string() + suffix);
+  error_code error;
+  if (filesystem::exists(source, error)) {
+    filesystem::copy_file(source, destination, filesystem::copy_options::overwrite_existing, error);
   }
 }
 
-void ensureInventoryDatabaseCopied(const std::filesystem::path& localBase) {
-  std::error_code error;
-  if (std::filesystem::exists(localBase, error)) {
+void ensureInventoryDatabaseCopied(const filesystem::path& localBase) {
+  error_code error;
+  if (filesystem::exists(localBase, error)) {
     return;
   }
 
   const auto sourceBase = legacyDatabasePath();
-  if (!std::filesystem::exists(sourceBase, error)) {
+  if (!filesystem::exists(sourceBase, error)) {
     return;
   }
 
-  std::filesystem::create_directories(localBase.parent_path(), error);
-  std::filesystem::copy_file(sourceBase, localBase, std::filesystem::copy_options::overwrite_existing, error);
+  filesystem::create_directories(localBase.parent_path(), error);
+  filesystem::copy_file(sourceBase, localBase, filesystem::copy_options::overwrite_existing, error);
   copyDatabaseSidecar(sourceBase, localBase, "-wal");
   copyDatabaseSidecar(sourceBase, localBase, "-shm");
 }
 
-std::filesystem::path locateDotEnvFile() {
-  std::error_code error;
-  auto current = std::filesystem::current_path();
+filesystem::path locateDotEnvFile() {
+  error_code error;
+  auto current = filesystem::current_path();
   for (int depth = 0; depth < 8 && !current.empty(); ++depth) {
     const auto candidate = current / ".env";
-    if (std::filesystem::exists(candidate, error)) {
+    if (filesystem::exists(candidate, error)) {
       return candidate;
     }
     const auto parent = current.parent_path();
@@ -896,7 +901,7 @@ std::filesystem::path locateDotEnvFile() {
 }  // namespace
 
 App::App()
-    : root_(std::filesystem::current_path()),
+    : root_(filesystem::current_path()),
       dataPath_(documentsHimsPath()),
       inventoryPath_(dataPath_ / "inventory.db"),
       activityPath_(dataPath_ / "activity.tsv") {
@@ -904,7 +909,8 @@ App::App()
   ensureInventoryDatabaseCopied(inventoryPath_);
   loadState();
 
-  if (!server_.start(8080, [this](const std::string& code) { pushScanCode(code); })) {
+  if (!server_.start(8080, filesystem::current_path() / "scanner.html",
+                     [this](const string& code) { pushScanCode(code); })) {
     setMessage("Scanner server failed to start; terminal still works", 5);
   } else {
     setMessage("Scanner ready at " + scannerUrl(), 5);
@@ -921,11 +927,14 @@ void App::loadState() {
 
   const auto config = loadDigiKeyConfig();
   if (config.valid()) {
-    DigiKeyApiClient client(std::move(config));
-    std::size_t refreshedCount = 0;
-    std::size_t attemptedCount = 0;
+    setMessage("Loading DigiKey metadata...", 15);
+    render();
+
+    DigiKeyApiClient client(move(config));
+    size_t refreshedCount = 0;
+    size_t attemptedCount = 0;
     for (auto& item : store_.items()) {
-      std::string lookup = !item.digikeyPartNumber.empty() ? item.digikeyPartNumber : item.sku;
+      string lookup = !item.digikeyPartNumber.empty() ? item.digikeyPartNumber : item.sku;
       if (lookup.empty() && !item.manufacturer.empty() && !item.partName.empty()) {
         lookup = item.manufacturer + " " + item.partName;
       }
@@ -937,7 +946,7 @@ void App::loadState() {
       }
 
       ++attemptedCount;
-      std::string error;
+      string error;
       if (const auto details = client.fetchProductDetails(lookup, &error); details.has_value()) {
         if (mergeDigiKeyMetadata(item, *details)) {
           ++refreshedCount;
@@ -946,8 +955,8 @@ void App::loadState() {
     }
 
     if (attemptedCount > 0) {
-      activities_.push_back(makeActivity("sync", "DigiKey metadata refreshed for " + std::to_string(refreshedCount) +
-                                                   " of " + std::to_string(attemptedCount) + " parts"));
+      activities_.push_back(makeActivity("sync", "DigiKey metadata refreshed for " + to_string(refreshedCount) +
+                                                   " of " + to_string(attemptedCount) + " parts"));
     }
   }
 
@@ -969,7 +978,7 @@ ftxui::Element App::renderUi() const {
   body.push_back(renderSearchBarUi());
   body.push_back(renderMessageUi());
   body.push_back(renderStatusBarUi());
-  return ftxui::vbox(std::move(body));
+  return ftxui::vbox(move(body));
 }
 
 ftxui::Element App::renderPageUi() const {
@@ -985,17 +994,19 @@ ftxui::Element App::renderPageUi() const {
   return ftxui::text("");
 }
 
+#if 0
+// Page implementations now live in src/ui/pages/.
 ftxui::Element App::renderDashboardUi() const {
   const auto summary = summarize(store_.items());
 
   ftxui::Elements leftBody;
   leftBody.push_back(fullLine("Summary", uiAccentColor(), uiPanelLeftBg()));
-  leftBody.push_back(bulletLine("Parts: ", std::to_string(summary.itemCount), uiInfoColor(), uiTitleColor()));
-  leftBody.push_back(bulletLine("Units: ", std::to_string(summary.totalUnits), uiSuccessColor(), uiTitleColor()));
-  leftBody.push_back(bulletLine("Low stock: ", std::to_string(summary.lowStockCount), uiWarnColor(), uiTitleColor()));
+  leftBody.push_back(bulletLine("Parts: ", to_string(summary.itemCount), uiInfoColor(), uiTitleColor()));
+  leftBody.push_back(bulletLine("Units: ", to_string(summary.totalUnits), uiSuccessColor(), uiTitleColor()));
+  leftBody.push_back(bulletLine("Low stock: ", to_string(summary.lowStockCount), uiWarnColor(), uiTitleColor()));
   leftBody.push_back(
-      bulletLine("Missing metadata: ", std::to_string(summary.missingMetadataCount), uiDangerColor(), uiTitleColor()));
-  leftBody.push_back(bulletLine("Unsynced: ", std::to_string(summary.unsyncedCount), uiLabelColor(), uiTitleColor()));
+      bulletLine("Missing metadata: ", to_string(summary.missingMetadataCount), uiDangerColor(), uiTitleColor()));
+  leftBody.push_back(bulletLine("Unsynced: ", to_string(summary.unsyncedCount), uiLabelColor(), uiTitleColor()));
   leftBody.push_back(ftxui::separator());
   leftBody.push_back(fullLine("Scanner", uiTitleColor(), uiPanelLeftBg()));
   leftBody.push_back(ftxui::paragraphAlignLeft(scannerUrl()) | ftxui::color(uiLinkColor()));
@@ -1015,8 +1026,8 @@ ftxui::Element App::renderDashboardUi() const {
     if (!item.lowStock()) {
       continue;
     }
-    rightBody.push_back(fullLine("  - " + item.partName + " qty " + std::to_string(item.quantity) + " / " +
-                                     std::to_string(item.reorderThreshold) + "  [" + item.category + "]",
+    rightBody.push_back(fullLine("  - " + item.partName + " qty " + to_string(item.quantity) + " / " +
+                                     to_string(item.reorderThreshold) + "  [" + item.category + "]",
                                  uiWarnColor(), uiRowLightBg()));
     if (++alertCount >= 6) {
       break;
@@ -1028,16 +1039,16 @@ ftxui::Element App::renderDashboardUi() const {
 
   rightBody.push_back(ftxui::separator());
   rightBody.push_back(fullLine("Recent activity", uiAccentColor(), uiPanelRightBg()));
-  const auto activityCount = std::min<std::size_t>(activities_.size(), 8);
-  for (std::size_t offset = 0; offset < activityCount; ++offset) {
+  const auto activityCount = min<size_t>(activities_.size(), 8);
+  for (size_t offset = 0; offset < activityCount; ++offset) {
     const auto& entry = activities_[activities_.size() - 1 - offset];
     const auto line = "  - " + nowTimestampString(entry.timestamp) + " | " + entry.kind + " | " + entry.message;
     ftxui::Color color = uiMutedColor();
-    if (entry.kind.find("scan") != std::string::npos) {
+    if (entry.kind.find("scan") != string::npos) {
       color = uiLinkColor();
-    } else if (entry.kind.find("add") != std::string::npos) {
+    } else if (entry.kind.find("add") != string::npos) {
       color = uiSuccessColor();
-    } else if (entry.kind.find("edit") != std::string::npos) {
+    } else if (entry.kind.find("edit") != string::npos) {
       color = uiInfoColor();
     } else if (entry.kind == "system") {
       color = uiLabelColor();
@@ -1048,8 +1059,8 @@ ftxui::Element App::renderDashboardUi() const {
     rightBody.push_back(fullLine("  No recent activity.", uiMutedColor(), uiPanelRightBg()));
   }
 
-  auto leftPanel = panel("Overview", std::move(leftBody), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()) | ftxui::flex;
-  auto rightPanel = panel("Activity", std::move(rightBody), uiWarnColor()) | ftxui::bgcolor(uiPanelRightBg()) | ftxui::flex;
+  auto leftPanel = panel("Overview", move(leftBody), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()) | ftxui::flex;
+  auto rightPanel = panel("Activity", move(rightBody), uiWarnColor()) | ftxui::bgcolor(uiPanelRightBg()) | ftxui::flex;
 
   return ftxui::hbox({
       leftPanel,
@@ -1062,24 +1073,24 @@ ftxui::Element App::renderStockUi() const {
   const auto filtered = filteredIndices();
   const auto* activeScreen = ftxui::ScreenInteractive::Active();
   const int screenWidth = activeScreen != nullptr ? activeScreen->dimx() : 120;
-  const int detailOuterWidth = std::clamp(screenWidth / 4, 38, 52);
-  const int listOuterWidth = std::max(40, screenWidth - detailOuterWidth - 1);
-  const int listInnerWidth = std::max(20, listOuterWidth - 2);
-  const int detailInnerWidth = std::max(20, detailOuterWidth - 2);
+  const int detailOuterWidth = clamp(screenWidth / 4, 38, 52);
+  const int listOuterWidth = max(40, screenWidth - detailOuterWidth - 1);
+  const int listInnerWidth = max(20, listOuterWidth - 2);
+  const int detailInnerWidth = max(20, detailOuterWidth - 2);
   const int qtyWidth = 10;
-  int partWidth = std::clamp(listInnerWidth / 3, 22, 34);
+  int partWidth = clamp(listInnerWidth / 3, 22, 34);
   int categoryWidth = listInnerWidth - partWidth - qtyWidth - 2;
   if (categoryWidth < 12) {
     categoryWidth = 12;
-    partWidth = std::max(18, listInnerWidth - categoryWidth - qtyWidth - 2);
+    partWidth = max(18, listInnerWidth - categoryWidth - qtyWidth - 2);
   }
   if (partWidth < 18) {
     partWidth = 18;
   }
 
-  auto fixedCell = [](const std::string& text, int width, ftxui::Color color) {
+  auto fixedCell = [](const string& text, int width, ftxui::Color color) {
     return ftxui::hbox({
-               styledText(ellipsize(text, static_cast<std::size_t>(std::max(width, 0))), color),
+               styledText(ellipsize(text, static_cast<size_t>(max(width, 0))), color),
                ftxui::filler(),
            }) |
            ftxui::size(ftxui::WIDTH, ftxui::EQUAL, width);
@@ -1102,7 +1113,7 @@ ftxui::Element App::renderStockUi() const {
   if (filtered.empty()) {
     listRows.push_back(fullLine("No items match \"" + searchQuery_ + "\".", uiMutedColor(), uiPanelLeftBg()));
   } else {
-    for (std::size_t index = 0; index < filtered.size(); ++index) {
+    for (size_t index = 0; index < filtered.size(); ++index) {
       const auto& item = store_.items()[filtered[index]];
       const bool selected = index == selectedPosition_;
       const bool lowStock = item.lowStock();
@@ -1133,7 +1144,7 @@ ftxui::Element App::renderStockUi() const {
     detailRows.push_back(fullLine("Part summary", uiAccentColor(), uiPanelRightBg()));
     const auto electricalFields = electricalFieldsForItem(*item);
     const auto previewFields = stockPreviewFields(*item);
-    for (std::size_t index = 0; index < previewFields.size(); ++index) {
+    for (size_t index = 0; index < previewFields.size(); ++index) {
       const auto& field = previewFields[index];
       if (index == 3 && !electricalFields.empty()) {
         detailRows.push_back(ftxui::separator());
@@ -1145,10 +1156,10 @@ ftxui::Element App::renderStockUi() const {
     detailRows.push_back(fullLine("No item selected.", uiMutedColor(), uiPanelRightBg()));
   }
 
-  auto listContent = ftxui::vbox(std::move(listRows)) | ftxui::yframe | ftxui::vscroll_indicator;
-  auto listPanel = ftxui::window(styledText("Items", uiAccentColor()), std::move(listContent)) |
+  auto listContent = ftxui::vbox(move(listRows)) | ftxui::yframe | ftxui::vscroll_indicator;
+  auto listPanel = ftxui::window(styledText("Items", uiAccentColor()), move(listContent)) |
                    ftxui::bgcolor(uiPanelLeftBg()) | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, listOuterWidth);
-  auto detailPanel = panel("Detail", std::move(detailRows), uiAccentColor()) | ftxui::bgcolor(uiPanelRightBg()) |
+  auto detailPanel = panel("Detail", move(detailRows), uiAccentColor()) | ftxui::bgcolor(uiPanelRightBg()) |
                      ftxui::size(ftxui::WIDTH, ftxui::EQUAL, detailOuterWidth);
 
   return ftxui::hbox({
@@ -1195,8 +1206,8 @@ ftxui::Element App::renderDetailUi() const {
     rightRows.push_back(fullLine("Press Esc to return to stock.", uiMutedColor(), uiPanelRightBg()));
   }
 
-  auto leftPanel = panel("Item detail", std::move(leftRows), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()) | ftxui::flex;
-  auto rightPanel = panel("Links and notes", std::move(rightRows), uiAccentColor()) | ftxui::bgcolor(uiPanelRightBg()) | ftxui::flex;
+  auto leftPanel = panel("Item detail", move(leftRows), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()) | ftxui::flex;
+  auto rightPanel = panel("Links and notes", move(rightRows), uiAccentColor()) | ftxui::bgcolor(uiPanelRightBg()) | ftxui::flex;
 
   return ftxui::hbox({
       leftPanel,
@@ -1204,6 +1215,8 @@ ftxui::Element App::renderDetailUi() const {
       rightPanel,
   });
 }
+
+#endif
 
 ftxui::Element App::renderSearchBarUi() const {
   ftxui::Elements rows;
@@ -1216,21 +1229,21 @@ ftxui::Element App::renderSearchBarUi() const {
   if (inputMode_ == InputMode::EditFieldMenu) {
     ftxui::Elements options;
     options.push_back(fullLine("Edit fields", uiAccentColor(), uiPanelLeftBg()));
-    for (std::size_t index = 0; index < menuOptions_.size(); ++index) {
+    for (size_t index = 0; index < menuOptions_.size(); ++index) {
       const auto bg = static_cast<int>(index) == fieldMenuIndex_ ? uiRowSelectedBg() : (index % 2 == 0 ? uiRowDarkBg() : uiRowLightBg());
-      auto option = fullLine("  [" + std::to_string(index < 9 ? index + 1 : 0) + "] " + menuOptions_[index].label,
+      auto option = fullLine("  [" + to_string(index < 9 ? index + 1 : 0) + "] " + menuOptions_[index].label,
                              static_cast<int>(index) == fieldMenuIndex_ ? uiTitleColor() : uiMutedColor(), bg);
       if (static_cast<int>(index) == fieldMenuIndex_) {
         option = option | ftxui::select;
       }
       options.push_back(option);
     }
-    rows.push_back(panel("Edit fields", std::move(options), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()));
+    rows.push_back(panel("Edit fields", move(options), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()));
   } else if (inputMode_ == InputMode::EditValue) {
     rows.push_back(fullLine("Input  " + activePrompt() + inputBuffer_ + "_", uiLinkColor(), uiPanelLeftBg()));
   }
 
-  return ftxui::vbox(std::move(rows));
+  return ftxui::vbox(move(rows));
 }
 
 ftxui::Element App::renderStatusBarUi() const {
@@ -1284,10 +1297,10 @@ int App::run() {
     return true;
   });
 
-  std::thread ticker([this, &screen] {
+  thread ticker([this, &screen] {
     while (running_) {
       screen.PostEvent(ftxui::Event::Custom);
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      this_thread::sleep_for(chrono::milliseconds(100));
     }
   });
 
@@ -1335,9 +1348,11 @@ void App::handleKey(const KeyEvent& key) {
   }
 }
 
+#if 0
+// Page-specific key handlers now live in src/ui/pages/.
 void App::handleDashboardKey(const KeyEvent& key) {
   if (key.type == KeyType::Character) {
-    switch (std::tolower(static_cast<unsigned char>(key.ch))) {
+    switch (tolower(static_cast<unsigned char>(key.ch))) {
       case '1':
       case '\t':
         changePage(Page::Stock);
@@ -1373,7 +1388,7 @@ void App::handleDashboardKey(const KeyEvent& key) {
 
 void App::handleStockKey(const KeyEvent& key) {
   if (key.type == KeyType::Character) {
-    const auto ch = std::tolower(static_cast<unsigned char>(key.ch));
+    const auto ch = tolower(static_cast<unsigned char>(key.ch));
     switch (ch) {
       case 'j':
         moveSelection(1);
@@ -1409,7 +1424,7 @@ void App::handleStockKey(const KeyEvent& key) {
       case 'g':
         if (const auto* item = selectedItem()) {
           const auto digiKeySearch = item->digikeyPartNumber.empty()
-                                         ? std::string()
+                                         ? string()
                                          : "https://www.digikey.com/en/products/result?keywords=" + item->digikeyPartNumber;
           openCurrentUrl(digiKeySearch, "DigiKey");
         }
@@ -1458,7 +1473,7 @@ void App::handleStockKey(const KeyEvent& key) {
 
 void App::handleDetailKey(const KeyEvent& key) {
   if (key.type == KeyType::Character) {
-    const auto ch = std::tolower(static_cast<unsigned char>(key.ch));
+    const auto ch = tolower(static_cast<unsigned char>(key.ch));
     switch (ch) {
       case 'e':
         beginEditCurrentItem(false);
@@ -1482,7 +1497,7 @@ void App::handleDetailKey(const KeyEvent& key) {
       case 'g':
         if (const auto* item = selectedItem()) {
           const auto digiKeySearch = item->digikeyPartNumber.empty()
-                                         ? std::string()
+                                         ? string()
                                          : "https://www.digikey.com/en/products/result?keywords=" + item->digikeyPartNumber;
           openCurrentUrl(digiKeySearch, "DigiKey");
         }
@@ -1510,6 +1525,8 @@ void App::handleDetailKey(const KeyEvent& key) {
     changePage(Page::Stock);
   }
 }
+
+#endif
 
 void App::handleSearchKey(const KeyEvent& key) {
   if (key.type == KeyType::Character) {
@@ -1543,7 +1560,7 @@ void App::handleSearchKey(const KeyEvent& key) {
 
 void App::handleEditMenuKey(const KeyEvent& key) {
   if (key.type == KeyType::Character) {
-    const auto ch = std::tolower(static_cast<unsigned char>(key.ch));
+    const auto ch = tolower(static_cast<unsigned char>(key.ch));
     if (ch >= '1' && ch <= '9') {
       fieldMenuIndex_ = ch - '1';
       if (fieldMenuIndex_ < static_cast<int>(menuOptions_.size())) {
@@ -1567,10 +1584,10 @@ void App::handleEditMenuKey(const KeyEvent& key) {
   }
 
   if (key.type == KeyType::Up) {
-    fieldMenuIndex_ = std::max(0, fieldMenuIndex_ - 1);
+    fieldMenuIndex_ = max(0, fieldMenuIndex_ - 1);
     dirty_ = true;
   } else if (key.type == KeyType::Down) {
-    fieldMenuIndex_ = std::min(fieldMenuIndex_ + 1, static_cast<int>(menuOptions_.size()) - 1);
+    fieldMenuIndex_ = min(fieldMenuIndex_ + 1, static_cast<int>(menuOptions_.size()) - 1);
     dirty_ = true;
   } else if (key.type == KeyType::Enter) {
     if (fieldMenuIndex_ >= 0 && fieldMenuIndex_ < static_cast<int>(menuOptions_.size())) {
@@ -1624,12 +1641,12 @@ void App::handleEditValueKey(const KeyEvent& key) {
 
 void App::render() {
   const auto size = consoleSize();
-  std::ostringstream out;
+  ostringstream out;
   out << "\x1b[?25l";
   out << kColorTitle << "HIMS Terminal" << kColorReset << "  ";
   out << kColorMuted << summaryLine() << kColorReset;
   out << "\n";
-  out << std::string(std::max(0, size.columns), '=') << '\n';
+  out << string(max(0, size.columns), '=') << '\n';
 
   switch (page_) {
     case Page::Dashboard:
@@ -1647,7 +1664,7 @@ void App::render() {
   renderMessage(out, size);
   renderStatusBar(out, size);
 
-  std::ostringstream screen;
+  ostringstream screen;
   screen << "\x1b[H";
 
   int renderedLines = 0;
@@ -1665,25 +1682,27 @@ void App::render() {
     ++renderedLines;
   }
 
-  std::cout << screen.str() << std::flush;
+  cout << screen.str() << flush;
 }
 
-void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
+#if 0
+// Page implementations now live in src/ui/pages/.
+void App::renderDashboard(ostringstream& out, const ConsoleSize& size) {
   const auto summary = summarize(store_.items());
-  const int contentRows = std::max(6, size.rows - 6);
+  const int contentRows = max(6, size.rows - 6);
 
   out << kColorAccent << "Dashboard" << kColorReset << "  ";
   out << kColorMuted << "Overview, alerts, and activity" << kColorReset << '\n';
-  out << std::string(std::max(0, size.columns), '-') << '\n';
+  out << string(max(0, size.columns), '-') << '\n';
 
   if (size.columns < 96) {
-    std::vector<std::string> lines;
+    vector<string> lines;
     lines.push_back(styleText("Summary", kColorAccent));
-    lines.push_back(styleText("  Parts: " + std::to_string(summary.itemCount), kColorInfo));
-    lines.push_back(styleText("  Units: " + std::to_string(summary.totalUnits), kColorSuccess));
-    lines.push_back(styleText("  Low stock: " + std::to_string(summary.lowStockCount), kColorWarn));
-    lines.push_back(styleText("  Missing metadata: " + std::to_string(summary.missingMetadataCount), kColorDanger));
-    lines.push_back(styleText("  Unsynced: " + std::to_string(summary.unsyncedCount), kColorLabel));
+    lines.push_back(styleText("  Parts: " + to_string(summary.itemCount), kColorInfo));
+    lines.push_back(styleText("  Units: " + to_string(summary.totalUnits), kColorSuccess));
+    lines.push_back(styleText("  Low stock: " + to_string(summary.lowStockCount), kColorWarn));
+    lines.push_back(styleText("  Missing metadata: " + to_string(summary.missingMetadataCount), kColorDanger));
+    lines.push_back(styleText("  Unsynced: " + to_string(summary.unsyncedCount), kColorLabel));
     lines.push_back("");
     lines.push_back(styleText("Scanner", kColorTitle));
     appendWrappedStyled(lines, scannerUrl(), size.columns, kColorLink);
@@ -1698,8 +1717,8 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
         continue;
       }
       appendWrappedStyled(lines,
-                          "  - " + item.partName + " qty " + std::to_string(item.quantity) + " / " +
-                              std::to_string(item.reorderThreshold) + "  [" + item.category + "]",
+                          "  - " + item.partName + " qty " + to_string(item.quantity) + " / " +
+                              to_string(item.reorderThreshold) + "  [" + item.category + "]",
                           size.columns, kColorWarn);
       if (++alertCount >= 4) {
         break;
@@ -1711,15 +1730,15 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
 
     lines.push_back("");
     lines.push_back(styleText("Recent activity", kColorAccent));
-    const auto activityCount = std::min<std::size_t>(activities_.size(), 5);
-    for (std::size_t offset = 0; offset < activityCount; ++offset) {
+    const auto activityCount = min<size_t>(activities_.size(), 5);
+    for (size_t offset = 0; offset < activityCount; ++offset) {
       const auto& entry = activities_[activities_.size() - 1 - offset];
       const char* activityColor = kColorMuted;
-      if (entry.kind.find("scan") != std::string::npos) {
+      if (entry.kind.find("scan") != string::npos) {
         activityColor = kColorLink;
-      } else if (entry.kind.find("add") != std::string::npos) {
+      } else if (entry.kind.find("add") != string::npos) {
         activityColor = kColorSuccess;
-      } else if (entry.kind.find("edit") != std::string::npos) {
+      } else if (entry.kind.find("edit") != string::npos) {
         activityColor = kColorInfo;
       } else if (entry.kind == "system") {
         activityColor = kColorLabel;
@@ -1738,7 +1757,7 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
                         kColorDim);
 
     if (static_cast<int>(lines.size()) > contentRows) {
-      lines.resize(static_cast<std::size_t>(contentRows));
+      lines.resize(static_cast<size_t>(contentRows));
     }
     for (const auto& line : lines) {
       out << line << '\n';
@@ -1746,18 +1765,18 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
     return;
   }
 
-  const int leftWidth = std::max(36, (size.columns - 4) / 2);
-  const int rightWidth = std::max(36, size.columns - leftWidth - 4);
+  const int leftWidth = max(36, (size.columns - 4) / 2);
+  const int rightWidth = max(36, size.columns - leftWidth - 4);
 
-  std::vector<std::string> leftLines;
-  std::vector<std::string> rightLines;
+  vector<string> leftLines;
+  vector<string> rightLines;
 
   leftLines.push_back("Summary");
-  leftLines.push_back("  Parts: " + std::to_string(summary.itemCount));
-  leftLines.push_back("  Units: " + std::to_string(summary.totalUnits));
-  leftLines.push_back("  Low stock: " + std::to_string(summary.lowStockCount));
-  leftLines.push_back("  Missing metadata: " + std::to_string(summary.missingMetadataCount));
-  leftLines.push_back("  Unsynced: " + std::to_string(summary.unsyncedCount));
+  leftLines.push_back("  Parts: " + to_string(summary.itemCount));
+  leftLines.push_back("  Units: " + to_string(summary.totalUnits));
+  leftLines.push_back("  Low stock: " + to_string(summary.lowStockCount));
+  leftLines.push_back("  Missing metadata: " + to_string(summary.missingMetadataCount));
+  leftLines.push_back("  Unsynced: " + to_string(summary.unsyncedCount));
   leftLines.push_back("");
   leftLines.push_back("Scanner");
   appendWrapped(leftLines, scannerUrl(), leftWidth);
@@ -1775,8 +1794,8 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
       continue;
     }
     appendWrapped(rightLines,
-                  "  - " + item.partName + " qty " + std::to_string(item.quantity) + " / " +
-                      std::to_string(item.reorderThreshold) + "  [" + item.category + "]",
+                  "  - " + item.partName + " qty " + to_string(item.quantity) + " / " +
+                      to_string(item.reorderThreshold) + "  [" + item.category + "]",
                   rightWidth);
     if (++alertCount >= 6) {
       break;
@@ -1788,8 +1807,8 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
 
   rightLines.push_back("");
   rightLines.push_back("Recent activity");
-  const auto activityCount = std::min<std::size_t>(activities_.size(), 8);
-  for (std::size_t offset = 0; offset < activityCount; ++offset) {
+  const auto activityCount = min<size_t>(activities_.size(), 8);
+  for (size_t offset = 0; offset < activityCount; ++offset) {
     const auto& entry = activities_[activities_.size() - 1 - offset];
     appendWrapped(rightLines,
                   "  - " + nowTimestampString(entry.timestamp) + " | " + entry.kind + " | " + entry.message,
@@ -1803,16 +1822,16 @@ void App::renderDashboard(std::ostringstream& out, const ConsoleSize& size) {
                 kColorMuted, kBgPanelRight);
 }
 
-void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
+void App::renderStock(ostringstream& out, const ConsoleSize& size) {
   const auto filtered = filteredIndices();
-  const int contentRows = std::max(6, size.rows - 6);
+  const int contentRows = max(6, size.rows - 6);
 
   out << kColorAccent << "Stock browser" << kColorReset << "  ";
   out << kColorMuted << "(j/k or arrows to move, Enter detail, e edit, n new, +/- adjust)" << kColorReset << '\n';
-  out << std::string(std::max(0, size.columns), '-') << '\n';
+  out << string(max(0, size.columns), '-') << '\n';
 
   struct StockLine {
-    std::string text;
+    string text;
     bool isHeader = false;
     bool isMessage = false;
     bool isSelected = false;
@@ -1821,21 +1840,21 @@ void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
   };
 
   const bool compact = size.columns < 96;
-  const int listHeight = compact ? std::max(4, contentRows / 2) : std::max(4, contentRows - 1);
-  const int listWidth = compact ? std::max(0, size.columns) : std::max(36, (size.columns - 4) / 3);
-  const int detailWidth = compact ? std::max(40, size.columns - 4) : std::max(40, size.columns - listWidth - 4);
-  const int partWidth = std::max(12, listWidth - 21);
+  const int listHeight = compact ? max(4, contentRows / 2) : max(4, contentRows - 1);
+  const int listWidth = compact ? max(0, size.columns) : max(36, (size.columns - 4) / 3);
+  const int detailWidth = compact ? max(40, size.columns - 4) : max(40, size.columns - listWidth - 4);
+  const int partWidth = max(12, listWidth - 21);
 
-  std::vector<StockLine> listLines;
+  vector<StockLine> listLines;
   listLines.push_back({"Items", true});
   listLines.push_back({"Part                          Category       Qty", true});
 
   if (filtered.empty()) {
     listLines.push_back({"No items match \"" + searchQuery_ + "\".", false, true});
   } else {
-    std::size_t visibleStart = 0;
-    if (selectedPosition_ >= static_cast<std::size_t>(listHeight)) {
-      visibleStart = selectedPosition_ - static_cast<std::size_t>(listHeight) + 1;
+    size_t visibleStart = 0;
+    if (selectedPosition_ >= static_cast<size_t>(listHeight)) {
+      visibleStart = selectedPosition_ - static_cast<size_t>(listHeight) + 1;
     }
     if (selectedPosition_ < visibleStart) {
       visibleStart = selectedPosition_;
@@ -1844,20 +1863,20 @@ void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
     stockScroll_ = visibleStart;
 
     for (int row = 0; row < listHeight; ++row) {
-      const auto pos = visibleStart + static_cast<std::size_t>(row);
+      const auto pos = visibleStart + static_cast<size_t>(row);
       if (pos >= filtered.size()) {
         break;
       }
 
       const auto& item = store_.items()[filtered[pos]];
-      std::ostringstream rowText;
+      ostringstream rowText;
       rowText << (pos == selectedPosition_ ? '>' : ' ') << ' ' << padRight(item.partName, partWidth) << "  "
-              << padRight(item.category, 11) << ' ' << std::setw(4) << item.quantity;
+              << padRight(item.category, 11) << ' ' << setw(4) << item.quantity;
       listLines.push_back({rowText.str(), false, false, pos == selectedPosition_, item.lowStock(), row % 2 == 0});
     }
   }
 
-  std::vector<StockLine> detailLines;
+  vector<StockLine> detailLines;
   detailLines.push_back({"Detail", true});
   if (const auto* item = selectedItem()) {
     const auto lines = splitLines(itemDetailText(*item, detailWidth));
@@ -1893,7 +1912,7 @@ void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
     if (line.text.rfind("Quantity: ", 0) == 0) {
       return styleCell(line.text, detailWidth, kColorSuccess, kBgPanelRight);
     }
-    if (line.text.find(": ") != std::string::npos) {
+    if (line.text.find(": ") != string::npos) {
       return styleCell(line.text, detailWidth, kColorInfo, kBgPanelRight);
     }
     return styleCell(line.text, detailWidth, kColorMuted, kBgPanelRight);
@@ -1910,8 +1929,8 @@ void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
     return;
   }
 
-  const std::size_t maxRows = std::max(listLines.size(), detailLines.size());
-  for (std::size_t row = 0; row < maxRows; ++row) {
+  const size_t maxRows = max(listLines.size(), detailLines.size());
+  for (size_t row = 0; row < maxRows; ++row) {
     const auto left = row < listLines.size() ? styleListLine(listLines[row]) : styleCell("", listWidth, nullptr, kBgPanelLeft);
     const auto right =
         row < detailLines.size() ? styleDetailLine(detailLines[row]) : styleCell("", detailWidth, nullptr, kBgPanelRight);
@@ -1919,16 +1938,16 @@ void App::renderStock(std::ostringstream& out, const ConsoleSize& size) {
   }
 }
 
-void App::renderDetail(std::ostringstream& out, const ConsoleSize& size) {
-  const int contentRows = std::max(6, size.rows - 6);
+void App::renderDetail(ostringstream& out, const ConsoleSize& size) {
+  const int contentRows = max(6, size.rows - 6);
 
   out << kColorAccent << "Item detail" << kColorReset << "  " << kColorMuted << "(Esc back to stock)" << kColorReset
       << '\n';
-  out << std::string(std::max(0, size.columns), '-') << '\n';
+  out << string(max(0, size.columns), '-') << '\n';
 
   if (size.columns < 96) {
     if (const auto* item = selectedItem()) {
-      std::vector<std::string> lines;
+      vector<string> lines;
       const auto electricalFields = electricalFieldsForItem(*item);
       lines.push_back(styleText("Core details", kColorAccent));
       for (const auto& field : detailCoreFields(*item)) {
@@ -1955,10 +1974,10 @@ void App::renderDetail(std::ostringstream& out, const ConsoleSize& size) {
       lines.push_back(styleText("  Updated: " + nowTimestampString(item->lastUpdated), kColorMuted));
       lines.push_back("");
       lines.push_back(styleText("Notes", kColorWarn));
-      appendWrappedStyled(lines, item->notes, std::max(50, size.columns - 4), kColorMuted);
+      appendWrappedStyled(lines, item->notes, max(50, size.columns - 4), kColorMuted);
       lines.push_back("");
       lines.push_back(styleText("Shortcuts", kColorAccent));
-      appendWrappedStyled(lines, "e Edit   n New   + / - Quantity   Enter Open detail   / Search", std::max(50, size.columns - 4),
+      appendWrappedStyled(lines, "e Edit   n New   + / - Quantity   Enter Open detail   / Search", max(50, size.columns - 4),
                           kColorDim);
       for (const auto& line : lines) {
         out << line << '\n';
@@ -1969,11 +1988,11 @@ void App::renderDetail(std::ostringstream& out, const ConsoleSize& size) {
     return;
   }
 
-  const int rightWidth = std::max(46, std::min(size.columns - 4, static_cast<int>(size.columns * 0.42)));
-  const int leftWidth = std::max(40, size.columns - rightWidth - 4);
+  const int rightWidth = max(46, min(size.columns - 4, static_cast<int>(size.columns * 0.42)));
+  const int leftWidth = max(40, size.columns - rightWidth - 4);
 
-  std::vector<std::string> leftLines;
-  std::vector<std::string> rightLines;
+  vector<string> leftLines;
+  vector<string> rightLines;
 
   if (const auto* item = selectedItem()) {
     const auto electricalFields = electricalFieldsForItem(*item);
@@ -2015,7 +2034,9 @@ void App::renderDetail(std::ostringstream& out, const ConsoleSize& size) {
                 kColorMuted, kBgPanelRight);
 }
 
-void App::renderSearchBar(std::ostringstream& out, const ConsoleSize&) {
+#endif
+
+void App::renderSearchBar(ostringstream& out, const ConsoleSize&) {
   out << '\n' << kColorAccent << "Search" << kColorReset << "  ";
   if (inputMode_ == InputMode::Search) {
     out << kColorLink << '/' << inputBuffer_ << '_' << kColorReset;
@@ -2026,11 +2047,11 @@ void App::renderSearchBar(std::ostringstream& out, const ConsoleSize&) {
 
   if (inputMode_ == InputMode::EditFieldMenu) {
     out << kColorAccent << "Edit fields" << kColorReset << '\n';
-    for (std::size_t index = 0; index < menuOptions_.size(); ++index) {
+    for (size_t index = 0; index < menuOptions_.size(); ++index) {
       if (static_cast<int>(index) == fieldMenuIndex_) {
         out << kColorSelect;
       }
-      out << "  [" << (index < 9 ? std::to_string(index + 1) : "0") << "] " << menuOptions_[index].label
+      out << "  [" << (index < 9 ? to_string(index + 1) : "0") << "] " << menuOptions_[index].label
           << kColorReset << '\n';
     }
   } else if (inputMode_ == InputMode::EditValue) {
@@ -2039,26 +2060,26 @@ void App::renderSearchBar(std::ostringstream& out, const ConsoleSize&) {
   }
 }
 
-void App::renderStatusBar(std::ostringstream& out, const ConsoleSize& size) {
-  out << std::string(size.columns, '-') << '\n';
+void App::renderStatusBar(ostringstream& out, const ConsoleSize& size) {
+  out << string(size.columns, '-') << '\n';
   out << kColorLink << scannerUrl() << kColorReset << "  ";
   out << kColorDim << "Dashboard: Tab/1  Stock: arrows/jk  Detail: Enter  Edit: e  New: n  Scanner: s  Quit: q" << kColorReset << '\n';
 }
 
-void App::renderMessage(std::ostringstream& out, const ConsoleSize&) {
+void App::renderMessage(ostringstream& out, const ConsoleSize&) {
   if (!message_.empty()) {
     out << kColorAccent << message_ << kColorReset << '\n';
   }
 }
 
-void App::setMessage(std::string text, int seconds) {
-  message_ = std::move(text);
-  messageUntil_ = std::time(nullptr) + seconds;
+void App::setMessage(string text, int seconds) {
+  message_ = move(text);
+  messageUntil_ = time(nullptr) + seconds;
   dirty_ = true;
 }
 
 bool App::messageVisible() const {
-  return !message_.empty() && std::time(nullptr) <= messageUntil_;
+  return !message_.empty() && time(nullptr) <= messageUntil_;
 }
 
 void App::clearMessageIfExpired() {
@@ -2072,22 +2093,22 @@ void App::markDirty() {
   dirty_ = true;
 }
 
-std::vector<std::size_t> App::filteredIndices() const {
+vector<size_t> App::filteredIndices() const {
   return filterItems(store_.items(), searchQuery_);
 }
 
-std::size_t App::selectedIndex() const {
+size_t App::selectedIndex() const {
   const auto filtered = filteredIndices();
   if (filtered.empty()) {
-    return std::numeric_limits<std::size_t>::max();
+    return numeric_limits<size_t>::max();
   }
-  const auto position = std::min(selectedPosition_, filtered.size() - 1);
+  const auto position = min(selectedPosition_, filtered.size() - 1);
   return filtered[position];
 }
 
 InventoryItem* App::selectedItem() {
   const auto index = selectedIndex();
-  if (index == std::numeric_limits<std::size_t>::max()) {
+  if (index == numeric_limits<size_t>::max()) {
     return nullptr;
   }
   return &store_.items()[index];
@@ -2095,7 +2116,7 @@ InventoryItem* App::selectedItem() {
 
 const InventoryItem* App::selectedItem() const {
   const auto index = selectedIndex();
-  if (index == std::numeric_limits<std::size_t>::max()) {
+  if (index == numeric_limits<size_t>::max()) {
     return nullptr;
   }
   return &store_.items()[index];
@@ -2120,9 +2141,9 @@ void App::moveSelection(int delta) {
     return;
   }
 
-  const auto current = static_cast<int>(std::min(selectedPosition_, filtered.size() - 1));
-  const auto next = std::clamp(current + delta, 0, static_cast<int>(filtered.size() - 1));
-  selectedPosition_ = static_cast<std::size_t>(next);
+  const auto current = static_cast<int>(min(selectedPosition_, filtered.size() - 1));
+  const auto next = clamp(current + delta, 0, static_cast<int>(filtered.size() - 1));
+  selectedPosition_ = static_cast<size_t>(next);
   dirty_ = true;
 }
 
@@ -2163,7 +2184,7 @@ void App::beginEditCurrentItem(bool createNew) {
     workingCopy_.item.category = "Unsorted";
     workingCopy_.item.location = "Unassigned";
     workingCopy_.item.syncStatus = "needs_metadata";
-    workingCopy_.item.lastUpdated = std::time(nullptr);
+    workingCopy_.item.lastUpdated = time(nullptr);
     workingCopy_.originalIndex = store_.items().size();
   } else {
     const auto* current = selectedItem();
@@ -2188,7 +2209,7 @@ void App::openFieldMenu() {
   inputMode_ = InputMode::EditFieldMenu;
 }
 
-void App::commitEditField(EditField field, const std::string& value) {
+void App::commitEditField(EditField field, const string& value) {
   const auto trimmed = trim(value);
   bool valid = true;
 
@@ -2204,14 +2225,14 @@ void App::commitEditField(EditField field, const std::string& value) {
       break;
     case EditField::Quantity:
       try {
-        workingCopy_.item.quantity = std::max(0, std::stoi(trimmed));
+        workingCopy_.item.quantity = max(0, stoi(trimmed));
       } catch (...) {
         valid = false;
       }
       break;
     case EditField::ReorderThreshold:
       try {
-        workingCopy_.item.reorderThreshold = std::max(0, std::stoi(trimmed));
+        workingCopy_.item.reorderThreshold = max(0, stoi(trimmed));
       } catch (...) {
         valid = false;
       }
@@ -2250,7 +2271,7 @@ void App::commitEditField(EditField field, const std::string& value) {
     return;
   }
 
-  workingCopy_.item.lastUpdated = std::time(nullptr);
+  workingCopy_.item.lastUpdated = time(nullptr);
   setMessage(fieldLabel(field) + " updated", 2);
   inputBuffer_.clear();
   inputMode_ = InputMode::EditFieldMenu;
@@ -2280,30 +2301,30 @@ void App::adjustQuantity(int delta) {
     return;
   }
 
-  item->quantity = std::max(0, item->quantity + delta);
-  item->lastUpdated = std::time(nullptr);
-  logActivity(delta > 0 ? "stock" : "usage", item->partName + " quantity changed to " + std::to_string(item->quantity));
+  item->quantity = max(0, item->quantity + delta);
+  item->lastUpdated = time(nullptr);
+  logActivity(delta > 0 ? "stock" : "usage", item->partName + " quantity changed to " + to_string(item->quantity));
   saveState();
-  setMessage(item->partName + " quantity is now " + std::to_string(item->quantity), 2);
+  setMessage(item->partName + " quantity is now " + to_string(item->quantity), 2);
   dirty_ = true;
 }
 
-void App::logActivity(const std::string& kind, const std::string& message) {
+void App::logActivity(const string& kind, const string& message) {
   appendActivity(activities_, makeActivity(kind, message));
   server_.setRecentActivity(activities_);
   saveActivities(activityPath_, activities_);
   dirty_ = true;
 }
 
-void App::pushScanCode(const std::string& code) {
-  std::lock_guard<std::mutex> lock(scanMutex_);
+void App::pushScanCode(const string& code) {
+  lock_guard<mutex> lock(scanMutex_);
   scanQueue_.push_back(code);
 }
 
 void App::processScans() {
-  std::vector<std::string> pending;
+  vector<string> pending;
   {
-    std::lock_guard<std::mutex> lock(scanMutex_);
+    lock_guard<mutex> lock(scanMutex_);
     pending.swap(scanQueue_);
   }
 
@@ -2317,11 +2338,11 @@ void App::processScans() {
       }
 
       if (const auto* item = store_.findById(resolution.itemId)) {
-        const auto it = std::find_if(store_.items().begin(), store_.items().end(), [&](const InventoryItem& entry) {
+        const auto it = find_if(store_.items().begin(), store_.items().end(), [&](const InventoryItem& entry) {
           return entry.id == item->id;
         });
         if (it != store_.items().end()) {
-          selectedPosition_ = static_cast<std::size_t>(std::distance(store_.items().begin(), it));
+          selectedPosition_ = static_cast<size_t>(distance(store_.items().begin(), it));
         }
       }
 
@@ -2335,7 +2356,7 @@ void App::processScans() {
   }
 }
 
-void App::openCurrentUrl(const std::string& url, const std::string& label) {
+void App::openCurrentUrl(const string& url, const string& label) {
   if (trim(url).empty()) {
     setMessage("No " + label + " link stored for this item", 3);
     return;
@@ -2347,7 +2368,7 @@ void App::openCurrentUrl(const std::string& url, const std::string& label) {
   }
 }
 
-std::string App::fieldLabel(EditField field) const {
+string App::fieldLabel(EditField field) const {
   switch (field) {
     case EditField::PartName:
       return "Part name";
@@ -2381,7 +2402,7 @@ std::string App::fieldLabel(EditField field) const {
   return "Field";
 }
 
-std::string App::currentFieldValue(EditField field) const {
+string App::currentFieldValue(EditField field) const {
   const auto* item = workingCopy_.item.id.empty() && !workingCopy_.isNew ? selectedItem() : &workingCopy_.item;
   if (item == nullptr) {
     return {};
@@ -2395,16 +2416,16 @@ std::string App::currentFieldValue(EditField field) const {
     case EditField::Category:
       return item->category;
     case EditField::Quantity:
-      return std::to_string(item->quantity);
+      return to_string(item->quantity);
     case EditField::ReorderThreshold:
-      return std::to_string(item->reorderThreshold);
+      return to_string(item->reorderThreshold);
     case EditField::Location:
       return item->location;
     case EditField::Tags:
       return join(item->tags, ',');
     case EditField::Parameters: {
-      std::ostringstream out;
-      for (std::size_t index = 0; index < item->parameters.size(); ++index) {
+      ostringstream out;
+      for (size_t index = 0; index < item->parameters.size(); ++index) {
         if (index > 0) {
           out << "; ";
         }
@@ -2429,7 +2450,7 @@ std::string App::currentFieldValue(EditField field) const {
   return {};
 }
 
-std::vector<App::FieldOption> App::fieldOptions() const {
+vector<App::FieldOption> App::fieldOptions() const {
   return {
       {"Part name", EditField::PartName},
       {"Manufacturer", EditField::Manufacturer},
@@ -2450,8 +2471,8 @@ std::vector<App::FieldOption> App::fieldOptions() const {
   };
 }
 
-std::string App::itemDetailText(const InventoryItem& item, int width) const {
-  std::ostringstream out;
+string App::itemDetailText(const InventoryItem& item, int width) const {
+  ostringstream out;
   const auto fields = stockPreviewFields(item);
   for (const auto& field : fields) {
     const auto line = field.label + field.value;
@@ -2463,9 +2484,9 @@ std::string App::itemDetailText(const InventoryItem& item, int width) const {
   return out.str();
 }
 
-std::string App::summaryLine() const {
+string App::summaryLine() const {
   const auto summary = summarize(store_.items());
-  std::ostringstream out;
+  ostringstream out;
   out << summary.itemCount << " items"
       << " | " << summary.totalUnits << " units"
       << " | " << summary.lowStockCount << " low"
@@ -2474,14 +2495,14 @@ std::string App::summaryLine() const {
   return out.str();
 }
 
-std::string App::scannerUrl() const {
+string App::scannerUrl() const {
   if (!server_.running() || server_.port() == 0) {
     return "scanner unavailable";
   }
   return server_.baseUrl() + "/";
 }
 
-std::string App::activePrompt() const {
+string App::activePrompt() const {
   if (inputMode_ == InputMode::EditValue && fieldMenuIndex_ >= 0 && fieldMenuIndex_ < static_cast<int>(menuOptions_.size())) {
     return fieldLabel(menuOptions_[fieldMenuIndex_].field) + ": ";
   }
@@ -2489,3 +2510,4 @@ std::string App::activePrompt() const {
 }
 
 }  // namespace hims
+

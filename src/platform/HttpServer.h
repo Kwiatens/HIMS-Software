@@ -1,6 +1,10 @@
+// HIMS - Hardware Inventory Management System
+// Local HTTP server for the mobile scanner companion page.
+
 #pragma once
 
 #include <atomic>
+#include <filesystem>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -21,9 +25,11 @@
 
 namespace hims {
 
+using namespace std;
+
 class LocalHttpServer {
  public:
-  using ScanCallback = std::function<void(const std::string&)>;
+  using ScanCallback = function<void(const string&)>;
 
   LocalHttpServer() = default;
   ~LocalHttpServer();
@@ -31,36 +37,39 @@ class LocalHttpServer {
   LocalHttpServer(const LocalHttpServer&) = delete;
   LocalHttpServer& operator=(const LocalHttpServer&) = delete;
 
-  bool start(std::uint16_t preferredPort, ScanCallback onScan);
+  bool start(uint16_t preferredPort, filesystem::path scannerPagePath, ScanCallback onScan);
   void stop();
-  void setRecentActivity(std::vector<ActivityEntry> activities);
+  void setRecentActivity(vector<ActivityEntry> activities);
 
   bool running() const;
-  std::uint16_t port() const;
-  std::string baseUrl() const;
-  std::vector<std::string> addresses() const;
-  std::string lastScan() const;
+  uint16_t port() const;
+  string baseUrl() const;
+  vector<string> addresses() const;
+  string lastScan() const;
 
  private:
   void workerLoop();
-  bool serveConnection(SOCKET clientSocket, std::string requestText);
-  std::string scannerPage() const;
-  std::string jsonStatus() const;
-  std::string responseText(const std::string& status, const std::string& contentType, const std::string& body) const;
-  bool bindSocket(std::uint16_t port);
-  std::string scanCallbackMessage(const std::string& code) const;
+  bool serveConnection(SOCKET clientSocket, string requestText);
+  bool loadScannerPage(const filesystem::path& scannerPagePath);
+  string jsonStatus() const;
+  string responseText(const string& status, const string& contentType, const string& body) const;
+  bool bindSocket(uint16_t port);
+  string scanCallbackMessage(const string& code) const;
 
-  std::atomic<bool> running_{false};
+  atomic<bool> running_{false};
   bool winsockStarted_ = false;
-  std::thread worker_;
+  thread worker_;
   ScanCallback onScan_;
-  mutable std::mutex stateMutex_;
-  std::uint16_t port_ = 0;
-  std::string lastScan_;
-  std::string lastError_;
-  std::vector<std::string> addresses_;
-  std::vector<ActivityEntry> recentActivities_;
+  mutable mutex stateMutex_;
+  uint16_t port_ = 0;
+  filesystem::path scannerPagePath_;
+  string scannerPageHtml_;
+  string lastScan_;
+  string lastError_;
+  vector<string> addresses_;
+  vector<ActivityEntry> recentActivities_;
   SOCKET listenSocket_ = INVALID_SOCKET;
 };
 
 }  // namespace hims
+

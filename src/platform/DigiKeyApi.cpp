@@ -27,39 +27,41 @@
 
 namespace hims {
 
+using namespace std;
+
 namespace {
 
-std::string trimCopy(std::string value) {
+string trimCopy(string value) {
   return trim(value);
 }
 
-std::string encodeComponent(const std::string& value, bool formEncoding) {
-  std::ostringstream out;
+string encodeComponent(const string& value, bool formEncoding) {
+  ostringstream out;
   for (unsigned char ch : value) {
-    if (std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
+    if (isalnum(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
       out << static_cast<char>(ch);
     } else if (ch == ' ' && formEncoding) {
       out << '+';
     } else if (ch == ' ' && !formEncoding) {
       out << "%20";
     } else {
-      out << '%' << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ch)
-          << std::nouppercase << std::dec;
+      out << '%' << uppercase << hex << setw(2) << setfill('0') << static_cast<int>(ch)
+          << nouppercase << dec;
     }
   }
   return out.str();
 }
 
-std::string encodeFormValue(const std::string& value) {
+string encodeFormValue(const string& value) {
   return encodeComponent(value, true);
 }
 
-std::string encodePathSegment(const std::string& value) {
+string encodePathSegment(const string& value) {
   return encodeComponent(value, false);
 }
 
-std::string escapeJsonString(const std::string& value) {
-  std::ostringstream out;
+string escapeJsonString(const string& value) {
+  ostringstream out;
   for (unsigned char ch : value) {
     switch (ch) {
       case '\\':
@@ -85,7 +87,7 @@ std::string escapeJsonString(const std::string& value) {
         break;
       default:
         if (ch < 0x20) {
-          out << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(ch) << std::dec;
+          out << "\\u" << hex << setw(4) << setfill('0') << static_cast<int>(ch) << dec;
         } else {
           out << static_cast<char>(ch);
         }
@@ -95,7 +97,7 @@ std::string escapeJsonString(const std::string& value) {
   return out.str();
 }
 
-std::wstring widen(const std::string& value) {
+wstring widen(const string& value) {
   if (value.empty()) {
     return {};
   }
@@ -103,12 +105,12 @@ std::wstring widen(const std::string& value) {
   if (required <= 0) {
     return {};
   }
-  std::wstring out(static_cast<std::size_t>(required), L'\0');
+  wstring out(static_cast<size_t>(required), L'\0');
   MultiByteToWideChar(CP_UTF8, 0, value.c_str(), static_cast<int>(value.size()), out.data(), required);
   return out;
 }
 
-std::string narrow(const std::wstring& value) {
+string narrow(const wstring& value) {
   if (value.empty()) {
     return {};
   }
@@ -116,25 +118,25 @@ std::string narrow(const std::wstring& value) {
   if (required <= 0) {
     return {};
   }
-  std::string out(static_cast<std::size_t>(required), '\0');
+  string out(static_cast<size_t>(required), '\0');
   WideCharToMultiByte(CP_UTF8, 0, value.c_str(), static_cast<int>(value.size()), out.data(), required, nullptr, nullptr);
   return out;
 }
 
 struct HttpResponse {
   DWORD statusCode = 0;
-  std::string body;
+  string body;
 };
 
-std::string httpErrorMessage(const std::string& prefix) {
+string httpErrorMessage(const string& prefix) {
   const DWORD code = GetLastError();
-  std::ostringstream out;
+  ostringstream out;
   out << prefix << " (Win32 " << code << ")";
   return out.str();
 }
 
-bool requestHttp(const std::wstring& method, const std::wstring& url, const std::wstring& headers, const std::string& body,
-                 HttpResponse& response, std::string* error) {
+bool requestHttp(const wstring& method, const wstring& url, const wstring& headers, const string& body,
+                 HttpResponse& response, string* error) {
   URL_COMPONENTS components{};
   components.dwStructSize = sizeof(components);
   components.dwSchemeLength = static_cast<DWORD>(-1);
@@ -148,8 +150,8 @@ bool requestHttp(const std::wstring& method, const std::wstring& url, const std:
     return false;
   }
 
-  std::wstring host(components.lpszHostName, components.dwHostNameLength);
-  std::wstring path(components.lpszUrlPath, components.dwUrlPathLength);
+  wstring host(components.lpszHostName, components.dwHostNameLength);
+  wstring path(components.lpszUrlPath, components.dwUrlPathLength);
   if (components.dwExtraInfoLength > 0) {
     path.append(components.lpszExtraInfo, components.dwExtraInfoLength);
   }
@@ -232,7 +234,7 @@ bool requestHttp(const std::wstring& method, const std::wstring& url, const std:
     return false;
   }
 
-  std::string bodyText;
+  string bodyText;
   for (;;) {
     DWORD available = 0;
     if (!WinHttpQueryDataAvailable(request, &available)) {
@@ -249,7 +251,7 @@ bool requestHttp(const std::wstring& method, const std::wstring& url, const std:
       break;
     }
 
-    const std::size_t current = bodyText.size();
+    const size_t current = bodyText.size();
     bodyText.resize(current + available);
     DWORD read = 0;
     if (!WinHttpReadData(request, bodyText.data() + current, available, &read)) {
@@ -265,7 +267,7 @@ bool requestHttp(const std::wstring& method, const std::wstring& url, const std:
   }
 
   response.statusCode = statusCode;
-  response.body = std::move(bodyText);
+  response.body = move(bodyText);
 
   WinHttpCloseHandle(request);
   WinHttpCloseHandle(connection);
@@ -274,25 +276,25 @@ bool requestHttp(const std::wstring& method, const std::wstring& url, const std:
 }
 
 struct JsonValue {
-  using Object = std::unordered_map<std::string, std::shared_ptr<JsonValue>>;
-  using Array = std::vector<std::shared_ptr<JsonValue>>;
+  using Object = unordered_map<string, shared_ptr<JsonValue>>;
+  using Array = vector<shared_ptr<JsonValue>>;
 
   JsonValue() = default;
-  explicit JsonValue(std::string text) : data(std::move(text)) {}
+  explicit JsonValue(string text) : data(move(text)) {}
   explicit JsonValue(bool flag) : data(flag) {}
-  explicit JsonValue(Object object) : data(std::move(object)) {}
-  explicit JsonValue(Array array) : data(std::move(array)) {}
+  explicit JsonValue(Object object) : data(move(object)) {}
+  explicit JsonValue(Array array) : data(move(array)) {}
 
-  std::variant<std::nullptr_t, bool, std::string, Object, Array> data = nullptr;
+  variant<nullptr_t, bool, string, Object, Array> data = nullptr;
 };
 
-using JsonPtr = std::shared_ptr<JsonValue>;
+using JsonPtr = shared_ptr<JsonValue>;
 
 class JsonParser {
  public:
-  explicit JsonParser(std::string_view text) : text_(text) {}
+  explicit JsonParser(string_view text) : text_(text) {}
 
-  bool parse(JsonPtr& out, std::string* error) {
+  bool parse(JsonPtr& out, string* error) {
     skipWhitespace();
     out = parseValue(error);
     if (out == nullptr) {
@@ -309,7 +311,7 @@ class JsonParser {
   }
 
  private:
-  JsonPtr parseValue(std::string* error) {
+  JsonPtr parseValue(string* error) {
     skipWhitespace();
     if (eof()) {
       if (error != nullptr) {
@@ -320,11 +322,11 @@ class JsonParser {
 
     const char ch = peek();
     if (ch == '"') {
-      std::string value;
+      string value;
       if (!parseString(value, error)) {
         return nullptr;
       }
-      return std::make_shared<JsonValue>(std::move(value));
+      return make_shared<JsonValue>(move(value));
     }
     if (ch == '{') {
       return parseObject(error);
@@ -332,21 +334,21 @@ class JsonParser {
     if (ch == '[') {
       return parseArray(error);
     }
-    if (std::isdigit(static_cast<unsigned char>(ch)) || ch == '-') {
-      std::string value;
+    if (isdigit(static_cast<unsigned char>(ch)) || ch == '-') {
+      string value;
       if (!parseNumber(value, error)) {
         return nullptr;
       }
-      return std::make_shared<JsonValue>(std::move(value));
+      return make_shared<JsonValue>(move(value));
     }
     if (matchLiteral("true")) {
-      return std::make_shared<JsonValue>(true);
+      return make_shared<JsonValue>(true);
     }
     if (matchLiteral("false")) {
-      return std::make_shared<JsonValue>(false);
+      return make_shared<JsonValue>(false);
     }
     if (matchLiteral("null")) {
-      return std::make_shared<JsonValue>();
+      return make_shared<JsonValue>();
     }
 
     if (error != nullptr) {
@@ -355,20 +357,20 @@ class JsonParser {
     return nullptr;
   }
 
-  JsonPtr parseObject(std::string* error) {
+  JsonPtr parseObject(string* error) {
     if (!consume('{')) {
       return nullptr;
     }
-    auto value = std::make_shared<JsonValue>();
+    auto value = make_shared<JsonValue>();
     JsonValue::Object object;
     skipWhitespace();
     if (consume('}')) {
-      value->data = std::move(object);
+      value->data = move(object);
       return value;
     }
 
     for (;;) {
-      std::string key;
+      string key;
       if (!parseString(key, error)) {
         return nullptr;
       }
@@ -383,10 +385,10 @@ class JsonParser {
       if (child == nullptr) {
         return nullptr;
       }
-      object.emplace(std::move(key), std::move(child));
+      object.emplace(move(key), move(child));
       skipWhitespace();
       if (consume('}')) {
-        value->data = std::move(object);
+        value->data = move(object);
         return value;
       }
       if (!consume(',')) {
@@ -399,15 +401,15 @@ class JsonParser {
     }
   }
 
-  JsonPtr parseArray(std::string* error) {
+  JsonPtr parseArray(string* error) {
     if (!consume('[')) {
       return nullptr;
     }
-    auto value = std::make_shared<JsonValue>();
+    auto value = make_shared<JsonValue>();
     JsonValue::Array array;
     skipWhitespace();
     if (consume(']')) {
-      value->data = std::move(array);
+      value->data = move(array);
       return value;
     }
 
@@ -416,10 +418,10 @@ class JsonParser {
       if (child == nullptr) {
         return nullptr;
       }
-      array.push_back(std::move(child));
+      array.push_back(move(child));
       skipWhitespace();
       if (consume(']')) {
-        value->data = std::move(array);
+        value->data = move(array);
         return value;
       }
       if (!consume(',')) {
@@ -432,7 +434,7 @@ class JsonParser {
     }
   }
 
-  bool parseString(std::string& out, std::string* error) {
+  bool parseString(string& out, string* error) {
     if (!consume('"')) {
       if (error != nullptr) {
         *error = "Expected JSON string";
@@ -497,17 +499,17 @@ class JsonParser {
     return false;
   }
 
-  bool parseNumber(std::string& out, std::string* error) {
-    const std::size_t start = pos_;
+  bool parseNumber(string& out, string* error) {
+    const size_t start = pos_;
     if (peek() == '-') {
       advance();
     }
-    while (!eof() && std::isdigit(static_cast<unsigned char>(peek()))) {
+    while (!eof() && isdigit(static_cast<unsigned char>(peek()))) {
       advance();
     }
     if (!eof() && peek() == '.') {
       advance();
-      while (!eof() && std::isdigit(static_cast<unsigned char>(peek()))) {
+      while (!eof() && isdigit(static_cast<unsigned char>(peek()))) {
         advance();
       }
     }
@@ -516,7 +518,7 @@ class JsonParser {
       if (!eof() && (peek() == '+' || peek() == '-')) {
         advance();
       }
-      while (!eof() && std::isdigit(static_cast<unsigned char>(peek()))) {
+      while (!eof() && isdigit(static_cast<unsigned char>(peek()))) {
         advance();
       }
     }
@@ -532,7 +534,7 @@ class JsonParser {
     return true;
   }
 
-  bool matchLiteral(std::string_view literal) {
+  bool matchLiteral(string_view literal) {
     if (text_.substr(pos_, literal.size()) != literal) {
       return false;
     }
@@ -557,7 +559,7 @@ class JsonParser {
   }
 
   void skipWhitespace() {
-    while (!eof() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+    while (!eof() && isspace(static_cast<unsigned char>(text_[pos_]))) {
       ++pos_;
     }
   }
@@ -566,8 +568,8 @@ class JsonParser {
     return pos_ >= text_.size();
   }
 
-  std::string_view text_;
-  std::size_t pos_ = 0;
+  string_view text_;
+  size_t pos_ = 0;
 };
 
 const JsonValue* asValue(const JsonPtr& value) {
@@ -576,31 +578,31 @@ const JsonValue* asValue(const JsonPtr& value) {
 
 const JsonValue::Object* asObject(const JsonPtr& value) {
   if (const auto* json = asValue(value); json != nullptr) {
-    return std::get_if<JsonValue::Object>(&json->data);
+    return get_if<JsonValue::Object>(&json->data);
   }
   return nullptr;
 }
 
 const JsonValue::Array* asArray(const JsonPtr& value) {
   if (const auto* json = asValue(value); json != nullptr) {
-    return std::get_if<JsonValue::Array>(&json->data);
+    return get_if<JsonValue::Array>(&json->data);
   }
   return nullptr;
 }
 
-std::string valueText(const JsonPtr& value) {
+string valueText(const JsonPtr& value) {
   if (const auto* json = asValue(value); json != nullptr) {
-    if (const auto* text = std::get_if<std::string>(&json->data)) {
+    if (const auto* text = get_if<string>(&json->data)) {
       return trimCopy(*text);
     }
-    if (const auto* flag = std::get_if<bool>(&json->data)) {
+    if (const auto* flag = get_if<bool>(&json->data)) {
       return *flag ? "true" : "false";
     }
   }
   return {};
 }
 
-const JsonPtr* findMember(const JsonPtr& object, const std::string& key) {
+const JsonPtr* findMember(const JsonPtr& object, const string& key) {
   const auto* jsonObject = asObject(object);
   if (jsonObject == nullptr) {
     return nullptr;
@@ -609,23 +611,23 @@ const JsonPtr* findMember(const JsonPtr& object, const std::string& key) {
   return it == jsonObject->end() ? nullptr : &it->second;
 }
 
-std::optional<std::string> readPath(const JsonPtr& root, std::initializer_list<const char*> path) {
+optional<string> readPath(const JsonPtr& root, initializer_list<const char*> path) {
   JsonPtr current = root;
   for (const auto* element : path) {
     const auto* next = findMember(current, element);
     if (next == nullptr) {
-      return std::nullopt;
+      return nullopt;
     }
     current = *next;
   }
   const auto text = valueText(current);
   if (text.empty()) {
-    return std::nullopt;
+    return nullopt;
   }
   return text;
 }
 
-std::optional<std::string> readFirstMember(const JsonPtr& root, std::initializer_list<const char*> keys) {
+optional<string> readFirstMember(const JsonPtr& root, initializer_list<const char*> keys) {
   for (const auto* key : keys) {
     if (const auto* member = findMember(root, key); member != nullptr) {
       const auto text = valueText(*member);
@@ -634,41 +636,41 @@ std::optional<std::string> readFirstMember(const JsonPtr& root, std::initializer
       }
     }
   }
-  return std::nullopt;
+  return nullopt;
 }
 
-bool looksLikePackagingType(const std::string& value) {
-  std::string normalized;
+bool looksLikePackagingType(const string& value) {
+  string normalized;
   normalized.reserve(value.size());
   for (unsigned char ch : value) {
-    if (std::isalnum(ch)) {
-      normalized.push_back(static_cast<char>(std::tolower(ch)));
+    if (isalnum(ch)) {
+      normalized.push_back(static_cast<char>(tolower(ch)));
     }
   }
   if (normalized.empty()) {
     return false;
   }
 
-  static const std::initializer_list<const char*> kPackagingTokens = {
+  static const initializer_list<const char*> kPackagingTokens = {
       "tapeandreel", "cuttape", "digireel", "reel", "tube", "tray", "bulk", "bag", "strip", "ammo", "box",
       "loose", "pack"};
-  return std::any_of(kPackagingTokens.begin(), kPackagingTokens.end(), [&](const char* token) {
-    return normalized == token || normalized.find(token) != std::string::npos;
+  return any_of(kPackagingTokens.begin(), kPackagingTokens.end(), [&](const char* token) {
+    return normalized == token || normalized.find(token) != string::npos;
   });
 }
 
-std::optional<std::string> readParameterValue(const JsonPtr& product, std::initializer_list<const char*> names) {
+optional<string> readParameterValue(const JsonPtr& product, initializer_list<const char*> names) {
   const auto* entries = asArray(findMember(product, "Parameters") == nullptr ? nullptr : *findMember(product, "Parameters"));
   if (entries == nullptr) {
-    return std::nullopt;
+    return nullopt;
   }
 
-  const auto normalize = [](const std::string& value) {
-    std::string normalized;
+  const auto normalize = [](const string& value) {
+    string normalized;
     normalized.reserve(value.size());
     for (unsigned char ch : value) {
-      if (std::isalnum(ch)) {
-        normalized.push_back(static_cast<char>(std::tolower(ch)));
+      if (isalnum(ch)) {
+        normalized.push_back(static_cast<char>(tolower(ch)));
       }
     }
     return normalized;
@@ -684,8 +686,8 @@ std::optional<std::string> readParameterValue(const JsonPtr& product, std::initi
     const auto normalizedLabel = normalize(*label);
     for (const auto* name : names) {
       const auto normalizedNeedle = normalize(name);
-      if (normalizedLabel == normalizedNeedle || normalizedLabel.find(normalizedNeedle) != std::string::npos ||
-          normalizedNeedle.find(normalizedLabel) != std::string::npos) {
+      if (normalizedLabel == normalizedNeedle || normalizedLabel.find(normalizedNeedle) != string::npos ||
+          normalizedNeedle.find(normalizedLabel) != string::npos) {
         const auto trimmed = trimCopy(*value);
         if (!trimmed.empty()) {
           return trimmed;
@@ -694,34 +696,34 @@ std::optional<std::string> readParameterValue(const JsonPtr& product, std::initi
     }
   }
 
-  return std::nullopt;
+  return nullopt;
 }
 
 struct SearchMatch {
-  std::string productNumber;
-  std::string manufacturerId;
-  std::string manufacturerPartNumber;
-  std::string productDescription;
-  std::string detailedDescription;
+  string productNumber;
+  string manufacturerId;
+  string manufacturerPartNumber;
+  string productDescription;
+  string detailedDescription;
 };
 
-std::string normalizeSearchKey(std::string value) {
-  std::string normalized;
+string normalizeSearchKey(string value) {
+  string normalized;
   normalized.reserve(value.size());
   for (unsigned char ch : value) {
-    if (std::isalnum(ch)) {
-      normalized.push_back(static_cast<char>(std::tolower(ch)));
+    if (isalnum(ch)) {
+      normalized.push_back(static_cast<char>(tolower(ch)));
     }
   }
   return normalized;
 }
 
-std::vector<std::string> tokenizeSearchKey(const std::string& value) {
-  std::vector<std::string> tokens;
-  std::string current;
+vector<string> tokenizeSearchKey(const string& value) {
+  vector<string> tokens;
+  string current;
   for (unsigned char ch : value) {
-    if (std::isalnum(ch)) {
-      current.push_back(static_cast<char>(std::tolower(ch)));
+    if (isalnum(ch)) {
+      current.push_back(static_cast<char>(tolower(ch)));
     } else if (!current.empty()) {
       tokens.push_back(current);
       current.clear();
@@ -733,17 +735,17 @@ std::vector<std::string> tokenizeSearchKey(const std::string& value) {
   return tokens;
 }
 
-bool tokenAppears(const std::string& haystack, const std::string& needle) {
+bool tokenAppears(const string& haystack, const string& needle) {
   const auto normalizedHaystack = normalizeSearchKey(haystack);
   const auto normalizedNeedle = normalizeSearchKey(needle);
-  return !normalizedNeedle.empty() && normalizedHaystack.find(normalizedNeedle) != std::string::npos;
+  return !normalizedNeedle.empty() && normalizedHaystack.find(normalizedNeedle) != string::npos;
 }
 
-int scoreSearchMatch(const SearchMatch& match, const std::string& query, bool exactBucket) {
+int scoreSearchMatch(const SearchMatch& match, const string& query, bool exactBucket) {
   const auto normalizedQuery = normalizeSearchKey(query);
   const auto queryTokens = tokenizeSearchKey(query);
 
-  const auto scoreCandidate = [&](const std::string& candidate, int exactScore, int containsScore) {
+  const auto scoreCandidate = [&](const string& candidate, int exactScore, int containsScore) {
     int score = 0;
     const auto normalizedCandidate = normalizeSearchKey(candidate);
     if (normalizedCandidate.empty()) {
@@ -752,12 +754,12 @@ int scoreSearchMatch(const SearchMatch& match, const std::string& query, bool ex
     if (!normalizedQuery.empty() && normalizedCandidate == normalizedQuery) {
       score += exactScore;
     } else if (!normalizedQuery.empty() &&
-               (normalizedCandidate.find(normalizedQuery) != std::string::npos ||
-                normalizedQuery.find(normalizedCandidate) != std::string::npos)) {
+               (normalizedCandidate.find(normalizedQuery) != string::npos ||
+                normalizedQuery.find(normalizedCandidate) != string::npos)) {
       score += containsScore;
     }
     for (const auto& token : queryTokens) {
-      if (token.size() >= 2 && normalizedCandidate.find(token) != std::string::npos) {
+      if (token.size() >= 2 && normalizedCandidate.find(token) != string::npos) {
         score += 8;
       }
     }
@@ -783,7 +785,7 @@ int scoreSearchMatch(const SearchMatch& match, const std::string& query, bool ex
   return score;
 }
 
-std::optional<SearchMatch> extractSearchMatch(const JsonPtr& product) {
+optional<SearchMatch> extractSearchMatch(const JsonPtr& product) {
   SearchMatch match;
   match.manufacturerId = readPath(product, {"Manufacturer", "Id"}).value_or("");
   match.manufacturerPartNumber = readPath(product, {"ManufacturerProductNumber"}).value_or("");
@@ -811,11 +813,11 @@ std::optional<SearchMatch> extractSearchMatch(const JsonPtr& product) {
     return match;
   }
 
-  return std::nullopt;
+  return nullopt;
 }
 
-std::optional<SearchMatch> resolveSearchResult(const JsonPtr& root, const std::string& query) {
-  std::optional<SearchMatch> bestMatch;
+optional<SearchMatch> resolveSearchResult(const JsonPtr& root, const string& query) {
+  optional<SearchMatch> bestMatch;
   int bestScore = 0;
 
   const auto considerMatches = [&](const JsonValue::Array* products, bool exactBucket) {
@@ -827,7 +829,7 @@ std::optional<SearchMatch> resolveSearchResult(const JsonPtr& root, const std::s
         const int score = scoreSearchMatch(*match, query, exactBucket);
         if (score > bestScore) {
           bestScore = score;
-          bestMatch = std::move(*match);
+          bestMatch = move(*match);
         }
       }
     }
@@ -837,17 +839,17 @@ std::optional<SearchMatch> resolveSearchResult(const JsonPtr& root, const std::s
   considerMatches(asArray(findMember(root, "Products") == nullptr ? nullptr : *findMember(root, "Products")), false);
 
   if (bestScore <= 0) {
-    return std::nullopt;
+    return nullopt;
   }
   return bestMatch;
 }
 
-std::optional<std::string> extractComponentPackageFromText(const std::string& text) {
+optional<string> extractComponentPackageFromText(const string& text) {
   if (text.empty()) {
-    return std::nullopt;
+    return nullopt;
   }
 
-  static const std::pair<const char*, const char*> kPatterns[] = {
+  static const pair<const char*, const char*> kPatterns[] = {
       {R"(\b(AXIAL|RADIAL|THROUGH HOLE|SURFACE MOUNT|SMD|SMT|MODULE)\b)", "$1"},
       {R"(\b(01005|0201|0402|0603|0805|1206|1210|1812|2010|2512)\b)", "$1"},
       {R"(\b(SOT-?23(?:-?\d+)?)\b)", "$1"},
@@ -870,23 +872,23 @@ std::optional<std::string> extractComponentPackageFromText(const std::string& te
   };
 
   for (const auto& [pattern, replacement] : kPatterns) {
-    std::regex re(pattern, std::regex_constants::icase);
-    std::smatch match;
-    if (std::regex_search(text, match, re) && match.size() > 1) {
+    regex re(pattern, regex_constants::icase);
+    smatch match;
+    if (regex_search(text, match, re) && match.size() > 1) {
       auto package = match[1].str();
       return package;
     }
   }
 
-  return std::nullopt;
+  return nullopt;
 }
 
-std::optional<std::string> extractComponentPackage(const JsonPtr& product) {
-  const auto fromParameter = [&](std::initializer_list<const char*> names) -> std::optional<std::string> {
+optional<string> extractComponentPackage(const JsonPtr& product) {
+  const auto fromParameter = [&](initializer_list<const char*> names) -> optional<string> {
     if (const auto value = readParameterValue(product, names); value.has_value() && !looksLikePackagingType(*value)) {
       return value;
     }
-    return std::nullopt;
+    return nullopt;
   };
 
   if (const auto package = fromParameter({"Package / Case", "Package Case", "Case / Package", "Case Package",
@@ -907,11 +909,11 @@ std::optional<std::string> extractComponentPackage(const JsonPtr& product) {
     return inferred;
   }
 
-  return std::nullopt;
+  return nullopt;
 }
 
-std::vector<Parameter> extractParameters(const JsonPtr& product) {
-  std::vector<Parameter> parameters;
+vector<Parameter> extractParameters(const JsonPtr& product) {
+  vector<Parameter> parameters;
   const auto* entries = asArray(findMember(product, "Parameters") == nullptr ? nullptr : *findMember(product, "Parameters"));
   if (entries == nullptr) {
     return parameters;
@@ -927,7 +929,7 @@ std::vector<Parameter> extractParameters(const JsonPtr& product) {
         labelText = "Packaging";
       }
       if (!labelText.empty() && !valueText.empty()) {
-        parameters.push_back({std::move(labelText), std::move(valueText)});
+        parameters.push_back({move(labelText), move(valueText)});
       }
     }
   }
@@ -935,7 +937,7 @@ std::vector<Parameter> extractParameters(const JsonPtr& product) {
   return parameters;
 }
 
-std::optional<std::string> extractPackagingType(const JsonPtr& product) {
+optional<string> extractPackagingType(const JsonPtr& product) {
   if (const auto* variations = asArray(findMember(product, "ProductVariations") == nullptr ? nullptr : *findMember(product, "ProductVariations"));
       variations != nullptr && !variations->empty()) {
     const auto package = readPath((*variations)[0], {"PackageType", "Name"});
@@ -943,10 +945,10 @@ std::optional<std::string> extractPackagingType(const JsonPtr& product) {
       return package;
     }
   }
-  return std::nullopt;
+  return nullopt;
 }
 
-DigiKeyProductDetails parseProductDetails(const std::string& lookupKey, const JsonPtr& root) {
+DigiKeyProductDetails parseProductDetails(const string& lookupKey, const JsonPtr& root) {
   DigiKeyProductDetails details;
   details.lookupKey = lookupKey;
 
@@ -986,7 +988,7 @@ DigiKeyProductDetails parseProductDetails(const std::string& lookupKey, const Js
 
   details.parameters = extractParameters(productNode);
   if (!details.packageName.empty()) {
-    const auto packageExists = std::any_of(details.parameters.begin(), details.parameters.end(), [](const Parameter& parameter) {
+    const auto packageExists = any_of(details.parameters.begin(), details.parameters.end(), [](const Parameter& parameter) {
       return toLower(parameter.name) == "package" || toLower(parameter.name) == "package / case" ||
              toLower(parameter.name) == "supplier device package";
     });
@@ -998,11 +1000,11 @@ DigiKeyProductDetails parseProductDetails(const std::string& lookupKey, const Js
   return details;
 }
 
-std::optional<JsonPtr> parseJson(const std::string& body, std::string* error) {
+optional<JsonPtr> parseJson(const string& body, string* error) {
   JsonParser parser(body);
   JsonPtr root;
   if (!parser.parse(root, error)) {
-    return std::nullopt;
+    return nullopt;
   }
   return root;
 }
@@ -1013,31 +1015,31 @@ bool DigiKeyConfig::valid() const {
   return !trimCopy(clientId).empty() && !trimCopy(clientSecret).empty();
 }
 
-bool loadEnvironmentFile(const std::filesystem::path& path) {
-  std::error_code error;
-  if (!std::filesystem::exists(path, error)) {
+bool loadEnvironmentFile(const filesystem::path& path) {
+  error_code error;
+  if (!filesystem::exists(path, error)) {
     return false;
   }
 
-  std::ifstream file(path);
+  ifstream file(path);
   if (!file) {
     return false;
   }
 
-  std::string line;
-  while (std::getline(file, line)) {
+  string line;
+  while (getline(file, line)) {
     line = trimCopy(line);
     if (line.empty() || line.front() == '#') {
       continue;
     }
 
     const auto equalsPos = line.find('=');
-    if (equalsPos == std::string::npos) {
+    if (equalsPos == string::npos) {
       continue;
     }
 
-    std::string key = trimCopy(line.substr(0, equalsPos));
-    std::string value = trimCopy(line.substr(equalsPos + 1));
+    string key = trimCopy(line.substr(0, equalsPos));
+    string value = trimCopy(line.substr(equalsPos + 1));
     if (!value.empty() && value.size() >= 2 && ((value.front() == '"' && value.back() == '"') ||
                                                 (value.front() == '\'' && value.back() == '\''))) {
       value = value.substr(1, value.size() - 2);
@@ -1053,58 +1055,58 @@ bool loadEnvironmentFile(const std::filesystem::path& path) {
 
 DigiKeyConfig loadDigiKeyConfig() {
   DigiKeyConfig config;
-  if (const char* value = std::getenv("DIGIKEY_CLIENT_ID"); value != nullptr) {
+  if (const char* value = getenv("DIGIKEY_CLIENT_ID"); value != nullptr) {
     config.clientId = value;
   }
-  if (const char* value = std::getenv("DIGIKEY_CLIENT_SECRET"); value != nullptr) {
+  if (const char* value = getenv("DIGIKEY_CLIENT_SECRET"); value != nullptr) {
     config.clientSecret = value;
   }
-  if (const char* value = std::getenv("DIGIKEY_ACCOUNT_ID"); value != nullptr) {
+  if (const char* value = getenv("DIGIKEY_ACCOUNT_ID"); value != nullptr) {
     config.accountId = value;
   }
-  if (const char* value = std::getenv("DIGIKEY_SITE"); value != nullptr && *value != '\0') {
+  if (const char* value = getenv("DIGIKEY_SITE"); value != nullptr && *value != '\0') {
     config.site = value;
   }
-  if (const char* value = std::getenv("DIGIKEY_LANGUAGE"); value != nullptr && *value != '\0') {
+  if (const char* value = getenv("DIGIKEY_LANGUAGE"); value != nullptr && *value != '\0') {
     config.language = value;
   }
-  if (const char* value = std::getenv("DIGIKEY_CURRENCY"); value != nullptr && *value != '\0') {
+  if (const char* value = getenv("DIGIKEY_CURRENCY"); value != nullptr && *value != '\0') {
     config.currency = value;
   }
   return config;
 }
 
-DigiKeyApiClient::DigiKeyApiClient(DigiKeyConfig config) : config_(std::move(config)) {}
+DigiKeyApiClient::DigiKeyApiClient(DigiKeyConfig config) : config_(move(config)) {}
 
-std::optional<std::string> DigiKeyApiClient::requestToken(std::string* error) {
-  const std::wstring url = L"https://api.digikey.com/v1/oauth2/token";
-  std::ostringstream body;
+optional<string> DigiKeyApiClient::requestToken(string* error) {
+  const wstring url = L"https://api.digikey.com/v1/oauth2/token";
+  ostringstream body;
   body << "client_id=" << encodeFormValue(config_.clientId) << "&client_secret=" << encodeFormValue(config_.clientSecret)
        << "&grant_type=client_credentials";
 
   HttpResponse response;
   if (!requestHttp(L"POST", url, L"Content-Type: application/x-www-form-urlencoded\r\n", body.str(), response, error)) {
-    return std::nullopt;
+    return nullopt;
   }
   if (response.statusCode < 200 || response.statusCode >= 300) {
     if (error != nullptr) {
-      std::ostringstream out;
+      ostringstream out;
       out << "DigiKey token request failed with HTTP " << response.statusCode;
       if (!response.body.empty()) {
         out << ": " << response.body;
       }
       *error = out.str();
     }
-    return std::nullopt;
+    return nullopt;
   }
 
-  std::string parseError;
+  string parseError;
   const auto root = parseJson(response.body, &parseError);
   if (!root.has_value()) {
     if (error != nullptr) {
       *error = "Unable to parse DigiKey token response: " + parseError;
     }
-    return std::nullopt;
+    return nullopt;
   }
 
   const auto token = readPath(*root, {"access_token"});
@@ -1112,15 +1114,15 @@ std::optional<std::string> DigiKeyApiClient::requestToken(std::string* error) {
     if (error != nullptr) {
       *error = "DigiKey token response did not include an access token";
     }
-    return std::nullopt;
+    return nullopt;
   }
 
-  tokenExpiresAt_ = std::time(nullptr) + 540;
+  tokenExpiresAt_ = time(nullptr) + 540;
   return token;
 }
 
-bool DigiKeyApiClient::ensureAccessToken(std::string* error) {
-  if (!accessToken_.empty() && std::time(nullptr) < tokenExpiresAt_) {
+bool DigiKeyApiClient::ensureAccessToken(string* error) {
+  if (!accessToken_.empty() && time(nullptr) < tokenExpiresAt_) {
     return true;
   }
 
@@ -1133,20 +1135,20 @@ bool DigiKeyApiClient::ensureAccessToken(std::string* error) {
   return true;
 }
 
-std::optional<std::string> DigiKeyApiClient::requestProductDetails(const std::string& productNumber,
-                                                                   std::string* error,
-                                                                   const std::string& manufacturerId) {
+optional<string> DigiKeyApiClient::requestProductDetails(const string& productNumber,
+                                                                   string* error,
+                                                                   const string& manufacturerId) {
   if (!ensureAccessToken(error)) {
-    return std::nullopt;
+    return nullopt;
   }
 
-  std::ostringstream url;
+  ostringstream url;
   url << "https://api.digikey.com/products/v4/search/" << encodePathSegment(productNumber) << "/productdetails";
   if (!trimCopy(manufacturerId).empty()) {
     url << "?manufacturerId=" << encodeComponent(manufacturerId, false);
   }
 
-  std::ostringstream headers;
+  ostringstream headers;
   headers << "Authorization: Bearer " << accessToken_ << "\r\n";
   headers << "X-DIGIKEY-Client-Id: " << config_.clientId << "\r\n";
   headers << "X-DIGIKEY-Locale-Language: " << config_.language << "\r\n";
@@ -1158,33 +1160,33 @@ std::optional<std::string> DigiKeyApiClient::requestProductDetails(const std::st
 
   HttpResponse response;
   if (!requestHttp(L"GET", widen(url.str()), widen(headers.str()), "", response, error)) {
-    return std::nullopt;
+    return nullopt;
   }
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
     if (error != nullptr) {
-      std::ostringstream out;
+      ostringstream out;
       out << "DigiKey details request failed with HTTP " << response.statusCode;
       if (!response.body.empty()) {
         out << ": " << response.body;
       }
       *error = out.str();
     }
-    return std::nullopt;
+    return nullopt;
   }
 
   return response.body;
 }
 
-std::optional<std::string> DigiKeyApiClient::requestKeywordSearch(const std::string& keywords, std::string* error) {
+optional<string> DigiKeyApiClient::requestKeywordSearch(const string& keywords, string* error) {
   if (!ensureAccessToken(error)) {
-    return std::nullopt;
+    return nullopt;
   }
 
-  std::ostringstream body;
+  ostringstream body;
   body << "{\"Keywords\":\"" << escapeJsonString(keywords) << "\",\"Limit\":10,\"Offset\":0}";
 
-  std::ostringstream headers;
+  ostringstream headers;
   headers << "Authorization: Bearer " << accessToken_ << "\r\n";
   headers << "X-DIGIKEY-Client-Id: " << config_.clientId << "\r\n";
   headers << "X-DIGIKEY-Locale-Language: " << config_.language << "\r\n";
@@ -1198,34 +1200,34 @@ std::optional<std::string> DigiKeyApiClient::requestKeywordSearch(const std::str
   HttpResponse response;
   if (!requestHttp(L"POST", L"https://api.digikey.com/products/v4/search/keyword", widen(headers.str()), body.str(),
                    response, error)) {
-    return std::nullopt;
+    return nullopt;
   }
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
     if (error != nullptr) {
-      std::ostringstream out;
+      ostringstream out;
       out << "DigiKey keyword search failed with HTTP " << response.statusCode;
       if (!response.body.empty()) {
         out << ": " << response.body;
       }
       *error = out.str();
     }
-    return std::nullopt;
+    return nullopt;
   }
 
   return response.body;
 }
 
-std::optional<DigiKeyProductDetails> DigiKeyApiClient::fetchProductDetails(const std::string& productNumber,
-                                                                           std::string* error) {
-  const auto parseDetails = [](const std::string& lookupKey, const std::string& bodyText, std::string* parseError) {
-    std::string bodyParseError;
+optional<DigiKeyProductDetails> DigiKeyApiClient::fetchProductDetails(const string& productNumber,
+                                                                           string* error) {
+  const auto parseDetails = [](const string& lookupKey, const string& bodyText, string* parseError) {
+    string bodyParseError;
     const auto root = parseJson(bodyText, &bodyParseError);
     if (!root.has_value()) {
       if (parseError != nullptr) {
         *parseError = "Unable to parse DigiKey details response: " + bodyParseError;
       }
-      return std::optional<DigiKeyProductDetails>{};
+      return optional<DigiKeyProductDetails>{};
     }
 
     auto details = parseProductDetails(lookupKey, *root);
@@ -1233,37 +1235,37 @@ std::optional<DigiKeyProductDetails> DigiKeyApiClient::fetchProductDetails(const
       if (parseError != nullptr) {
         *parseError = "DigiKey returned an empty details payload";
       }
-      return std::optional<DigiKeyProductDetails>{};
+      return optional<DigiKeyProductDetails>{};
     }
 
-    return std::optional<DigiKeyProductDetails>{std::move(details)};
+    return optional<DigiKeyProductDetails>{move(details)};
   };
 
-  std::string directError;
+  string directError;
   if (const auto body = requestProductDetails(productNumber, &directError); body.has_value()) {
-    std::string parseError;
+    string parseError;
     if (const auto details = parseDetails(productNumber, *body, &parseError); details.has_value()) {
       return details;
     }
-    directError = std::move(parseError);
+    directError = move(parseError);
   }
 
-  std::string keywordError;
+  string keywordError;
   const auto keywordBody = requestKeywordSearch(productNumber, &keywordError);
   if (!keywordBody.has_value()) {
     if (error != nullptr) {
       *error = directError.empty() ? keywordError : directError + " | " + keywordError;
     }
-    return std::nullopt;
+    return nullopt;
   }
 
-  std::string searchParseError;
+  string searchParseError;
   const auto searchRoot = parseJson(*keywordBody, &searchParseError);
   if (!searchRoot.has_value()) {
     if (error != nullptr) {
       *error = "Unable to parse DigiKey keyword response: " + searchParseError;
     }
-    return std::nullopt;
+    return nullopt;
   }
 
   const auto match = resolveSearchResult(*searchRoot, productNumber);
@@ -1272,23 +1274,23 @@ std::optional<DigiKeyProductDetails> DigiKeyApiClient::fetchProductDetails(const
       *error = directError.empty() ? "DigiKey keyword search did not return a usable match"
                                    : directError + " | DigiKey keyword search did not return a usable match";
     }
-    return std::nullopt;
+    return nullopt;
   }
 
-  std::string resolvedError;
+  string resolvedError;
   if (const auto resolvedBody = requestProductDetails(match->productNumber, &resolvedError, match->manufacturerId);
       resolvedBody.has_value()) {
-    std::string parseError;
+    string parseError;
     if (const auto details = parseDetails(match->productNumber, *resolvedBody, &parseError); details.has_value()) {
       return details;
     }
-    resolvedError = std::move(parseError);
+    resolvedError = move(parseError);
   }
 
   if (error != nullptr) {
     *error = directError.empty() ? resolvedError : directError + " | " + resolvedError;
   }
-  return std::nullopt;
+  return nullopt;
 }
 
 }  // namespace hims
@@ -1301,7 +1303,7 @@ bool DigiKeyConfig::valid() const {
   return false;
 }
 
-bool loadEnvironmentFile(const std::filesystem::path&) {
+bool loadEnvironmentFile(const filesystem::path&) {
   return false;
 }
 
@@ -1309,12 +1311,13 @@ DigiKeyConfig loadDigiKeyConfig() {
   return {};
 }
 
-DigiKeyApiClient::DigiKeyApiClient(DigiKeyConfig config) : config_(std::move(config)) {}
+DigiKeyApiClient::DigiKeyApiClient(DigiKeyConfig config) : config_(move(config)) {}
 
-std::optional<DigiKeyProductDetails> DigiKeyApiClient::fetchProductDetails(const std::string&, std::string*) {
-  return std::nullopt;
+optional<DigiKeyProductDetails> DigiKeyApiClient::fetchProductDetails(const string&, string*) {
+  return nullopt;
 }
 
 }  // namespace hims
 
 #endif
+

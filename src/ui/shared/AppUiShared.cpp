@@ -1,0 +1,625 @@
+// HIMS - Hardware Inventory Management System
+// Shared terminal UI formatting and inventory detail helpers.
+
+#include "ui/shared/AppUiShared.h"
+
+#include <algorithm>
+#include <cctype>
+#include <initializer_list>
+#include <limits>
+#include <optional>
+#include <sstream>
+
+namespace hims {
+
+using namespace std;
+
+ftxui::Color uiTitleColor() {
+  return ftxui::Color::RGB(102, 204, 255);
+}
+
+ftxui::Color uiAccentColor() {
+  return ftxui::Color::RGB(80, 220, 170);
+}
+
+ftxui::Color uiInfoColor() {
+  return ftxui::Color::RGB(120, 180, 255);
+}
+
+ftxui::Color uiSuccessColor() {
+  return ftxui::Color::RGB(115, 220, 140);
+}
+
+ftxui::Color uiLinkColor() {
+  return ftxui::Color::RGB(98, 200, 255);
+}
+
+ftxui::Color uiLabelColor() {
+  return ftxui::Color::RGB(170, 160, 255);
+}
+
+ftxui::Color uiWarnColor() {
+  return ftxui::Color::RGB(255, 190, 80);
+}
+
+ftxui::Color uiDangerColor() {
+  return ftxui::Color::RGB(255, 110, 120);
+}
+
+ftxui::Color uiMutedColor() {
+  return ftxui::Color::RGB(180, 180, 180);
+}
+
+ftxui::Color uiDimColor() {
+  return ftxui::Color::RGB(120, 120, 120);
+}
+
+ftxui::Color uiPanelLeftBg() {
+  return ftxui::Color::RGB(24, 24, 24);
+}
+
+ftxui::Color uiPanelRightBg() {
+  return ftxui::Color::RGB(30, 30, 30);
+}
+
+ftxui::Color uiRowDarkBg() {
+  return ftxui::Color::RGB(20, 20, 20);
+}
+
+ftxui::Color uiRowLightBg() {
+  return ftxui::Color::RGB(42, 42, 42);
+}
+
+ftxui::Color uiRowSelectedBg() {
+  return ftxui::Color::RGB(25, 70, 110);
+}
+
+string padRight(string value, int width) {
+  if (width <= 0) {
+    return {};
+  }
+  if (static_cast<int>(value.size()) > width) {
+    if (width <= 1) {
+      return value.substr(0, width);
+    }
+    return value.substr(0, width - 3) + "...";
+  }
+  value.append(static_cast<size_t>(width - static_cast<int>(value.size())), ' ');
+  return value;
+}
+
+string styleText(const string& text, const char* fg, const char* bg) {
+  ostringstream out;
+  if (bg != nullptr) {
+    out << bg;
+  }
+  if (fg != nullptr) {
+    out << fg;
+  }
+  out << text << kColorReset;
+  return out.str();
+}
+
+string styleCell(const string& text, int width, const char* fg, const char* bg) {
+  return styleText(padRight(text, width), fg, bg);
+}
+
+ftxui::Element styledText(const string& text, optional<ftxui::Color> fg,
+                          optional<ftxui::Color> bg) {
+  auto element = ftxui::text(text);
+  if (fg) {
+    element = element | ftxui::color(*fg);
+  }
+  if (bg) {
+    element = element | ftxui::bgcolor(*bg);
+  }
+  return element;
+}
+
+ftxui::Element fullLine(const string& text, optional<ftxui::Color> fg,
+                        optional<ftxui::Color> bg) {
+  auto element = ftxui::hbox({ftxui::text(text), ftxui::filler()});
+  if (fg) {
+    element = element | ftxui::color(*fg);
+  }
+  if (bg) {
+    element = element | ftxui::bgcolor(*bg);
+  }
+  return element;
+}
+
+ftxui::Element bulletLine(const string& label, const string& value, ftxui::Color labelColor,
+                          ftxui::Color valueColor) {
+  return ftxui::hbox({
+      styledText(label, labelColor),
+      styledText(value, valueColor),
+      ftxui::filler(),
+  });
+}
+
+ftxui::Element panel(const string& title, ftxui::Elements body, optional<ftxui::Color> titleColor,
+                     optional<ftxui::Color> borderColor) {
+  auto titleElement = styledText(title, titleColor);
+  auto element = ftxui::window(titleElement, ftxui::vbox(move(body)));
+  if (borderColor) {
+    element = element | ftxui::color(*borderColor);
+  }
+  return element;
+}
+
+ftxui::Element quantityBadge(int quantity, bool selected) {
+  const auto fg = quantity <= 0 ? uiDangerColor() : (quantity <= 5 ? uiWarnColor() : uiSuccessColor());
+  const auto bg = selected ? ftxui::Color::RGB(18, 18, 18)
+                           : (quantity <= 0 ? ftxui::Color::RGB(52, 22, 22)
+                                            : (quantity <= 5 ? ftxui::Color::RGB(58, 42, 14)
+                                                             : ftxui::Color::RGB(18, 44, 28)));
+  return ftxui::text(" QTY " + to_string(quantity) + " ") | ftxui::bold | ftxui::color(fg) | ftxui::bgcolor(bg);
+}
+
+string displayCategory(const string& category) {
+  auto value = trim(category);
+  const auto slash = value.find(" / ");
+  if (slash != string::npos) {
+    value = trim(value.substr(0, slash));
+  }
+
+  const auto openParen = value.find(" (");
+  if (openParen != string::npos) {
+    value = trim(value.substr(0, openParen));
+  }
+
+  return value;
+}
+
+string ellipsize(const string& value, size_t maxLength) {
+  if (maxLength == 0 || value.size() <= maxLength) {
+    return value;
+  }
+  if (maxLength <= 3) {
+    return value.substr(0, maxLength);
+  }
+  return value.substr(0, maxLength - 3) + "...";
+}
+
+vector<string> splitLines(const string& text) {
+  vector<string> lines;
+  istringstream input(text);
+  string line;
+
+  while (getline(input, line)) {
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+    lines.push_back(move(line));
+  }
+
+  if (lines.empty()) {
+    lines.push_back({});
+  }
+
+  return lines;
+}
+
+vector<string> wrapText(const string& text, int width) {
+  vector<string> lines;
+  if (width <= 0) {
+    return lines;
+  }
+
+  istringstream words(text);
+  string word;
+  string line;
+
+  while (words >> word) {
+    if (static_cast<int>(line.size() + word.size() + 1) > width && !line.empty()) {
+      lines.push_back(line);
+      line.clear();
+    }
+
+    if (!line.empty()) {
+      line.push_back(' ');
+    }
+    line += word;
+  }
+
+  if (!line.empty()) {
+    lines.push_back(line);
+  }
+
+  if (lines.empty()) {
+    lines.push_back({});
+  }
+
+  return lines;
+}
+
+void renderColumns(ostringstream& out, const vector<string>& leftLines,
+                   const vector<string>& rightLines, int leftWidth, int rightWidth, int maxRows, int gap,
+                   const char* leftFg, const char* leftBg, const char* rightFg, const char* rightBg) {
+  const int rowCount = min(maxRows, max(static_cast<int>(leftLines.size()), static_cast<int>(rightLines.size())));
+
+  for (int row = 0; row < rowCount; ++row) {
+    const auto left = row < static_cast<int>(leftLines.size()) ? leftLines[static_cast<size_t>(row)] : "";
+    const auto right = row < static_cast<int>(rightLines.size()) ? rightLines[static_cast<size_t>(row)] : "";
+    out << styleCell(left, leftWidth, leftFg, leftBg) << string(static_cast<size_t>(gap), ' ')
+        << styleCell(right, rightWidth, rightFg, rightBg) << '\n';
+  }
+}
+
+void appendWrapped(vector<string>& lines, const string& text, int width) {
+  const auto wrapped = wrapText(text, width);
+  lines.insert(lines.end(), wrapped.begin(), wrapped.end());
+}
+
+void appendWrappedStyled(vector<string>& lines, const string& text, int width, const char* fg) {
+  const auto wrapped = wrapText(text, width);
+  for (const auto& line : wrapped) {
+    lines.push_back(styleText(line, fg));
+  }
+}
+
+string joinTags(const vector<string>& tags) {
+  return join(tags, ',');
+}
+
+string renderTags(const vector<string>& tags) {
+  if (tags.empty()) {
+    return "-";
+  }
+  return ellipsize(joinTags(tags), 32);
+}
+
+string renderParameters(const vector<Parameter>& parameters) {
+  if (parameters.empty()) {
+    return "-";
+  }
+
+  ostringstream out;
+  for (size_t index = 0; index < parameters.size(); ++index) {
+    if (index > 0) {
+      out << "; ";
+    }
+    out << parameters[index].name << '=' << parameters[index].value;
+  }
+  return out.str();
+}
+
+string renderUrl(const string& url) {
+  if (url.empty()) {
+    return "-";
+  }
+  return ellipsize(url, 32);
+}
+
+string normalizeKey(string value) {
+  string normalized;
+  normalized.reserve(value.size());
+  for (unsigned char ch : value) {
+    if (isalnum(ch)) {
+      normalized.push_back(static_cast<char>(tolower(ch)));
+    }
+  }
+  return normalized;
+}
+
+bool categoryContains(const InventoryItem& item, initializer_list<const char*> needles) {
+  const auto category = normalizeKey(displayCategory(item.category));
+  for (const auto* needle : needles) {
+    const auto normalizedNeedle = normalizeKey(needle);
+    if (category.find(normalizedNeedle) != string::npos || normalizedNeedle.find(category) != string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool parameterLabelMatches(const string& lhs, const string& rhs) {
+  const auto normalizedLhs = normalizeKey(lhs);
+  const auto normalizedRhs = normalizeKey(rhs);
+  return normalizedLhs == normalizedRhs || normalizedLhs.find(normalizedRhs) != string::npos ||
+         normalizedRhs.find(normalizedLhs) != string::npos;
+}
+
+bool looksLikePackagingValue(const string& value) {
+  const auto normalized = normalizeKey(value);
+  if (normalized.empty()) {
+    return false;
+  }
+
+  static const initializer_list<const char*> kPackagingTokens = {
+      "tapeandreel", "cuttape", "digireel", "tube", "tray", "bulk", "bag", "strip", "ammo", "box", "loose",
+      "pack", "reel"};
+  return any_of(kPackagingTokens.begin(), kPackagingTokens.end(), [&](const char* token) {
+    return normalized == token || normalized.find(token) != string::npos;
+  });
+}
+
+const Parameter* findParameter(const vector<Parameter>& parameters, initializer_list<const char*> names) {
+  for (const auto* name : names) {
+    for (const auto& parameter : parameters) {
+      if (parameterLabelMatches(parameter.name, name)) {
+        return &parameter;
+      }
+    }
+  }
+  return nullptr;
+}
+
+optional<string> parameterValue(const InventoryItem& item, initializer_list<const char*> names) {
+  if (const auto* parameter = findParameter(item.parameters, names); parameter != nullptr) {
+    const auto value = trim(parameter->value);
+    if (!value.empty() && !looksLikePackagingValue(value)) {
+      return value;
+    }
+  }
+  return nullopt;
+}
+
+string prettyLabel(const string& label) {
+  const auto trimmed = trim(label);
+  if (!trimmed.empty()) {
+    return trimmed;
+  }
+  return "Value";
+}
+
+vector<DetailField> electricalFieldsForItem(const InventoryItem& item) {
+  vector<DetailField> fields;
+  const auto addField = [&](const string& label, optional<string> value) {
+    if (value && !trim(*value).empty()) {
+      fields.push_back({label + ": ", *value, uiLabelColor(), uiTitleColor()});
+    }
+  };
+  const auto addValueAndPackage = [&](const string& label, optional<string> value,
+                                      optional<string> package) {
+    addField(label, move(value));
+    addField("Package", move(package));
+  };
+  const auto hasParameter = [&](initializer_list<const char*> names) {
+    return findParameter(item.parameters, names) != nullptr;
+  };
+
+  const auto package = parameterValue(item, {"Package / Case", "Package Case", "Case / Package", "Case Package",
+                                             "Supplier Device Package", "Device Package", "Package"});
+
+  if (categoryContains(item, {"capacitor"})) {
+    addValueAndPackage("Capacitance", parameterValue(item, {"Capacitance", "Value"}), package);
+    addField("Operating Voltage", parameterValue(item, {"Operating Voltage", "Voltage", "Voltage - Rated", "Rated Voltage"}));
+    addField("Tolerance", parameterValue(item, {"Tolerance"}));
+    addField("Type", parameterValue(item, {"Type", "Dielectric", "Dielectric Type"}));
+    addField("ESR", parameterValue(item, {"ESR", "ESR (Equivalent Series Resistance)"}));
+    addField("Lifetime @ Temp.", parameterValue(item, {"Lifetime @ Temp.", "Lifetime"}));
+    addField("Polarization", parameterValue(item, {"Polarization"}));
+    addField("Operating Temperature", parameterValue(item, {"Operating Temperature"}));
+    addField("Applications", parameterValue(item, {"Applications"}));
+    addField("Size / Dimension", parameterValue(item, {"Size / Dimension"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"resistor"})) {
+    addValueAndPackage("Resistance", parameterValue(item, {"Resistance", "Value"}), package);
+    addField("Power Dissipation",
+             parameterValue(item, {"Power Dissipation", "Power (Watts)", "Power Rating", "Power", "Power - Max", "Watts"}));
+    addField("Tolerance", parameterValue(item, {"Tolerance"}));
+    addField("Composition", parameterValue(item, {"Composition"}));
+    addField("Temperature Coefficient", parameterValue(item, {"Temperature Coefficient", "Tempco"}));
+    addField("Operating Temperature", parameterValue(item, {"Operating Temperature"}));
+    addField("Size / Dimension", parameterValue(item, {"Size / Dimension"}));
+    addField("Height", parameterValue(item, {"Height - Seated (Max)", "Height"}));
+    addField("Number of Terminations", parameterValue(item, {"Number of Terminations"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"indicator", "led"})) {
+    addValueAndPackage("Color", parameterValue(item, {"Color"}), package);
+    addField("Forward Voltage", parameterValue(item, {"Forward Voltage", "Vf"}));
+    addField("Wavelength", parameterValue(item, {"Wavelength"}));
+    addField("Current", parameterValue(item, {"Current", "If", "Forward Current"}));
+    addField("Type", parameterValue(item, {"Type"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"integrated circuit", "integrated circuits"})) {
+    if (hasParameter({"Memory Type", "Memory Format", "Memory Size"}) ||
+        hasParameter({"Program Memory Size", "Program Memory Type"})) {
+      addValueAndPackage("Memory", parameterValue(item, {"Memory Size", "Program Memory Size", "Memory"}), package);
+      addField("Memory Type", parameterValue(item, {"Memory Type", "Memory Format"}));
+      addField("Memory Interface", parameterValue(item, {"Memory Interface", "Interface"}));
+      addField("Technology", parameterValue(item, {"Technology"}));
+      addField("Clock", parameterValue(item, {"Clock Frequency", "Speed"}));
+      addField("Operating Voltage", parameterValue(item, {"Voltage - Supply", "Voltage - Supply (Min/Max)", "Voltage - Supply (Min)", "Voltage - Supply (Max)"}));
+      addField("Operating Temperature", parameterValue(item, {"Operating Temperature"}));
+      addField("Mounting Type", parameterValue(item, {"Mounting Type"}));
+      addField("DigiKey Programmable", parameterValue(item, {"DigiKey Programmable"}));
+      return fields;
+    }
+
+    if (hasParameter({"Voltage - Input", "Voltage - Output", "Current - Output", "Output Type", "Voltage - Output (Min/Fixed)"})) {
+      addValueAndPackage("Output Voltage",
+                         parameterValue(item, {"Voltage - Output", "Voltage - Output (Min/Fixed)", "Voltage - Output (Max)", "Output Voltage"}),
+                         package);
+      addField("Input Voltage", parameterValue(item, {"Voltage - Input", "Voltage - Input (Min/Max)", "Vin"}));
+      addField("Current", parameterValue(item, {"Current - Output", "Output Current", "Current"}));
+      addField("Type", parameterValue(item, {"Type", "Output Type"}));
+      addField("Operating Temperature", parameterValue(item, {"Operating Temperature"}));
+      addField("Mounting Type", parameterValue(item, {"Mounting Type"}));
+      return fields;
+    }
+
+    addValueAndPackage("Function", parameterValue(item, {"Function", "Type", "Memory Type"}), package);
+    addField("Technology", parameterValue(item, {"Technology"}));
+    addField("Interface", parameterValue(item, {"Interface", "Memory Interface"}));
+    addField("Operating Voltage", parameterValue(item, {"Voltage - Supply", "Voltage - Supply (Min/Max)"}));
+    addField("Operating Temperature", parameterValue(item, {"Operating Temperature"}));
+    addField("Mounting Type", parameterValue(item, {"Mounting Type"}));
+    addField("DigiKey Programmable", parameterValue(item, {"DigiKey Programmable"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"inductor", "choke", "coil"})) {
+    addValueAndPackage("Inductance", parameterValue(item, {"Inductance", "Value"}), package);
+    addField("Current Rating", parameterValue(item, {"Current Rating", "Current Rating (Amps)", "Current"}));
+    addField("DC Resistance", parameterValue(item, {"DC Resistance", "DC Resistance (DCR)", "DCR"}));
+    addField("Saturation Current", parameterValue(item, {"Saturation Current", "Current - Saturation (Isat)"}));
+    addField("Q @ Freq", parameterValue(item, {"Q @ Freq"}));
+    addField("Frequency", parameterValue(item, {"Frequency - Self Resonant", "Frequency"}));
+    addField("Shielding", parameterValue(item, {"Shielding"}));
+    addField("Material", parameterValue(item, {"Material - Core"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"diode", "rectifier", "schottky"})) {
+    addValueAndPackage("Forward Voltage", parameterValue(item, {"Forward Voltage", "Voltage - Forward (Vf) (Max) @ If", "Vf"}), package);
+    addField("Reverse Voltage", parameterValue(item, {"Reverse Voltage", "Voltage - DC Reverse (Vr) (Max)", "Peak Reverse Voltage", "Vr"}));
+    addField("Current", parameterValue(item, {"Current", "Current - Average Rectified (Io)", "If", "Forward Current"}));
+    addField("Technology", parameterValue(item, {"Technology"}));
+    addField("Speed", parameterValue(item, {"Speed"}));
+    addField("Reverse Leakage", parameterValue(item, {"Current - Reverse Leakage @ Vr"}));
+    addField("Operating Temperature", parameterValue(item, {"Operating Temperature - Junction", "Operating Temperature"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"transistor", "mosfet", "fet", "discrete semiconductor"})) {
+    addValueAndPackage("Drain-Source Voltage",
+                       parameterValue(item, {"Drain-Source Voltage", "Drain to Source Voltage (Vdss)", "Vds", "Vdss"}), package);
+    addField("Current", parameterValue(item, {"Continuous Drain Current", "Current - Continuous Drain (Id) @ 25Â°C", "Current", "Id"}));
+    addField("RDS On", parameterValue(item, {"Rds On", "Rds On (Max) @ Id, Vgs", "RDS(ON)"}));
+    addField("Gate Charge", parameterValue(item, {"Gate Charge", "Gate Charge (Qg) (Max) @ Vgs"}));
+    addField("Drive Voltage", parameterValue(item, {"Drive Voltage", "Drive Voltage (Max Rds On, Min Rds On)"}));
+    addField("VGS", parameterValue(item, {"Vgs", "Vgs (Max)", "Vgs(th) (Max) @ Id"}));
+    addField("Input Capacitance", parameterValue(item, {"Input Capacitance (Ciss) (Max) @ Vds", "Input Capacitance"}));
+    addField("Power - Max", parameterValue(item, {"Power - Max"}));
+    addField("Technology", parameterValue(item, {"Technology"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"connector"})) {
+    addValueAndPackage("Pins", parameterValue(item, {"Pins", "Number of Positions", "Pin Count"}), package);
+    addField("Connector Type", parameterValue(item, {"Connector Type"}));
+    addField("Contact Type", parameterValue(item, {"Contact Type"}));
+    addField("Rows", parameterValue(item, {"Rows", "Number of Rows"}));
+    addField("Pitch", parameterValue(item, {"Pitch", "Pitch - Mating"}));
+    addField("Mounting Type", parameterValue(item, {"Mounting Type"}));
+    addField("Termination", parameterValue(item, {"Termination"}));
+    addField("Fastening Type", parameterValue(item, {"Fastening Type"}));
+    addField("Shrouding", parameterValue(item, {"Shrouding"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"mcu", "microcontroller"})) {
+    addValueAndPackage("Flash", parameterValue(item, {"Flash"}), package);
+    addField("Core", parameterValue(item, {"Core", "Core Processor"}));
+    addField("Operating Voltage", parameterValue(item, {"Operating Voltage", "Voltage - Supply", "Voltage"}));
+    addField("RAM", parameterValue(item, {"RAM", "Memory"}));
+    addField("Clock", parameterValue(item, {"Clock Speed", "Speed"}));
+    addField("I/O", parameterValue(item, {"Number of I/O"}));
+    addField("Program Memory", parameterValue(item, {"Program Memory Size", "Program Memory Type"}));
+    addField("EEPROM", parameterValue(item, {"EEPROM Size"}));
+    addField("Connectivity", parameterValue(item, {"Connectivity"}));
+    addField("Peripherals", parameterValue(item, {"Peripherals"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"regulator", "voltage regulator", "power management"})) {
+    addValueAndPackage("Output Voltage", parameterValue(item, {"Output Voltage", "Voltage - Output", "Vout"}), package);
+    addField("Input Voltage", parameterValue(item, {"Voltage - Input", "Vin"}));
+    addField("Current", parameterValue(item, {"Output Current", "Current - Output", "Iout"}));
+    addField("Type", parameterValue(item, {"Type", "Output Type"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"crystal", "oscillator", "resonator"})) {
+    addValueAndPackage("Frequency", parameterValue(item, {"Frequency"}), package);
+    addField("Load Capacitance", parameterValue(item, {"Load Capacitance"}));
+    addField("ESR", parameterValue(item, {"ESR", "Equivalent Series Resistance"}));
+    addField("Operating Mode", parameterValue(item, {"Operating Mode"}));
+    addField("Operating Temperature", parameterValue(item, {"Operating Temperature"}));
+    addField("Size / Dimension", parameterValue(item, {"Size / Dimension"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"sensor", "temperature sensor", "pressure sensor"})) {
+    addValueAndPackage("Type", parameterValue(item, {"Type"}), package);
+    addField("Sensor Type", parameterValue(item, {"Sensor Type"}));
+    addField("Output", parameterValue(item, {"Output", "Output Type"}));
+    addField("Voltage - Supply", parameterValue(item, {"Voltage - Supply"}));
+    addField("Resolution", parameterValue(item, {"Resolution"}));
+    addField("Accuracy", parameterValue(item, {"Accuracy - Highest (Lowest)"}));
+    addField("Operating Temperature", parameterValue(item, {"Operating Temperature"}));
+    addField("Features", parameterValue(item, {"Features"}));
+    return fields;
+  }
+
+  if (categoryContains(item, {"circuit protection", "fuse", "tvs", "transient voltage suppressor"})) {
+    addValueAndPackage("Current Rating", parameterValue(item, {"Current Rating (Amps)", "Current Rating", "Current"}), package);
+    addField("Voltage AC", parameterValue(item, {"Voltage Rating - AC"}));
+    addField("Voltage DC", parameterValue(item, {"Voltage Rating - DC"}));
+    addField("Reverse Standoff", parameterValue(item, {"Voltage - Reverse Standoff (Typ)"}));
+    addField("Breakdown", parameterValue(item, {"Voltage - Breakdown (Min)"}));
+    addField("Clamping", parameterValue(item, {"Voltage - Clamping (Max) @ Ipp"}));
+    addField("Peak Pulse Current", parameterValue(item, {"Current - Peak Pulse (10/1000Âµs)"}));
+    addField("Peak Pulse Power", parameterValue(item, {"Power - Peak Pulse"}));
+    addField("Response Time", parameterValue(item, {"Response Time"}));
+    addField("Operating Temperature", parameterValue(item, {"Operating Temperature"}));
+    return fields;
+  }
+
+  optional<string> primaryValue;
+  optional<string> primaryLabel;
+  for (const auto& parameter : item.parameters) {
+    const auto label = prettyLabel(parameter.name);
+    if (normalizeKey(label) == "package") {
+      continue;
+    }
+    if (!primaryValue) {
+      primaryLabel = label;
+      primaryValue = trim(parameter.value);
+      continue;
+    }
+    addField(label, trim(parameter.value));
+  }
+
+  if (primaryValue && !primaryValue->empty()) {
+    fields.insert(fields.begin(),
+                  DetailField{primaryLabel.value_or("Value") + ": ", *primaryValue, uiLabelColor(), uiTitleColor()});
+  } else if (package && !package->empty()) {
+    fields.insert(fields.begin(), DetailField{"Package: ", *package, uiLabelColor(), uiTitleColor()});
+  }
+
+  return fields;
+}
+
+vector<DetailField> stockPreviewFields(const InventoryItem& item) {
+  vector<DetailField> fields;
+  fields.push_back({"Name: ", item.partName, uiInfoColor(), uiTitleColor()});
+  fields.push_back({"Manufacturer: ", item.manufacturer, uiInfoColor(), uiTitleColor()});
+  fields.push_back({"Quantity: ", to_string(item.quantity), uiSuccessColor(), uiTitleColor()});
+
+  const auto electricalFields = electricalFieldsForItem(item);
+  fields.insert(fields.end(), electricalFields.begin(), electricalFields.end());
+  return fields;
+}
+
+vector<DetailField> detailCoreFields(const InventoryItem& item) {
+  return {
+      {"Name: ", item.partName, uiInfoColor(), uiTitleColor()},
+      {"Manufacturer: ", item.manufacturer, uiInfoColor(), uiTitleColor()},
+      {"Category: ", displayCategory(item.category), uiLabelColor(), uiTitleColor()},
+      {"Quantity: ", to_string(item.quantity), uiSuccessColor(), uiTitleColor()},
+      {"Threshold: ", to_string(item.reorderThreshold), uiWarnColor(), uiTitleColor()},
+      {"Location: ", item.location, uiMutedColor(), uiTitleColor()},
+  };
+}
+
+ftxui::Element detailFieldLine(const DetailField& field, int width) {
+  const int valueWidth = max(0, width - static_cast<int>(field.label.size()) - 1);
+  return ftxui::hbox({
+             styledText(field.label, field.labelColor),
+             styledText(ellipsize(field.value, static_cast<size_t>(valueWidth)), field.valueColor),
+             ftxui::filler(),
+         }) |
+         ftxui::size(ftxui::WIDTH, ftxui::EQUAL, width);
+}
+
+}  // namespace hims
+

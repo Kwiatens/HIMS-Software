@@ -26,6 +26,10 @@ endif()
 add_executable(hims
   src/main.cpp
   src/app.cpp
+  src/ui/shared/AppUiShared.cpp
+  src/ui/pages/DashboardPage.cpp
+  src/ui/pages/StockPage.cpp
+  src/ui/pages/DetailPage.cpp
   src/core/Inventory.cpp
   src/platform/HttpServer.cpp
   src/platform/DigiKeyApi.cpp
@@ -39,6 +43,12 @@ if(WIN32)
 endif()
 
 target_link_libraries(hims PRIVATE ftxui::screen ftxui::dom ftxui::component)
+
+add_custom_command(TARGET hims POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/web/scanner.html"
+          "$<TARGET_FILE_DIR:hims>/scanner.html"
+)
 
 add_executable(hims_tests
   tests/hims_tests.cpp

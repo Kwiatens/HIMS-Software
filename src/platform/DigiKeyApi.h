@@ -10,56 +10,59 @@
 
 namespace hims {
 
+using namespace std;
+
 struct DigiKeyConfig {
-  std::string clientId;
-  std::string clientSecret;
-  std::string accountId;
-  std::string site = "US";
-  std::string language = "en";
-  std::string currency = "USD";
+  string clientId;
+  string clientSecret;
+  string accountId;
+  string site = "US";
+  string language = "en";
+  string currency = "USD";
 
   bool valid() const;
 };
 
 struct DigiKeyProductDetails {
-  std::string lookupKey;
-  std::string manufacturerName;
-  std::string manufacturerPartNumber;
-  std::string productDescription;
-  std::string detailedDescription;
-  std::string productUrl;
-  std::string datasheetUrl;
-  std::string packagingType;
-  std::string packageName;
-  std::string rohsStatus;
-  std::string leadStatus;
-  std::string productStatus;
-  std::string manufacturerLeadWeeks;
-  std::string quantityAvailable;
-  std::string unitPrice;
-  std::vector<Parameter> parameters;
+  string lookupKey;
+  string manufacturerName;
+  string manufacturerPartNumber;
+  string productDescription;
+  string detailedDescription;
+  string productUrl;
+  string datasheetUrl;
+  string packagingType;
+  string packageName;
+  string rohsStatus;
+  string leadStatus;
+  string productStatus;
+  string manufacturerLeadWeeks;
+  string quantityAvailable;
+  string unitPrice;
+  vector<Parameter> parameters;
 };
 
-bool loadEnvironmentFile(const std::filesystem::path& path);
+bool loadEnvironmentFile(const filesystem::path& path);
 DigiKeyConfig loadDigiKeyConfig();
 
 class DigiKeyApiClient {
  public:
   explicit DigiKeyApiClient(DigiKeyConfig config);
 
-  std::optional<DigiKeyProductDetails> fetchProductDetails(const std::string& productNumber,
-                                                           std::string* error = nullptr);
+  optional<DigiKeyProductDetails> fetchProductDetails(const string& productNumber,
+                                                           string* error = nullptr);
 
  private:
-  bool ensureAccessToken(std::string* error);
-  std::optional<std::string> requestToken(std::string* error);
-  std::optional<std::string> requestProductDetails(const std::string& productNumber, std::string* error,
-                                                   const std::string& manufacturerId = "");
-  std::optional<std::string> requestKeywordSearch(const std::string& keywords, std::string* error);
+  bool ensureAccessToken(string* error);
+  optional<string> requestToken(string* error);
+  optional<string> requestProductDetails(const string& productNumber, string* error,
+                                                   const string& manufacturerId = "");
+  optional<string> requestKeywordSearch(const string& keywords, string* error);
 
   DigiKeyConfig config_;
-  std::string accessToken_;
-  std::time_t tokenExpiresAt_ = 0;
+  string accessToken_;
+  time_t tokenExpiresAt_ = 0;
 };
 
 }  // namespace hims
+

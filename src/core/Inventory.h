@@ -8,98 +8,100 @@
 
 namespace hims {
 
+using namespace std;
+
 struct Parameter {
-  std::string name;
-  std::string value;
+  string name;
+  string value;
 };
 
 struct InventoryItem {
-  std::string id;
-  std::string partName;
-  std::string manufacturer;
-  std::string category;
+  string id;
+  string partName;
+  string manufacturer;
+  string category;
   int quantity = 0;
   int reorderThreshold = 0;
-  std::string location;
-  std::vector<std::string> tags;
-  std::vector<Parameter> parameters;
-  std::string notes;
-  std::string digikeyPartNumber;
-  std::string datasheetUrl;
-  std::string productUrl;
-  std::string syncStatus = "synced";
-  std::string sku;
-  std::time_t lastUpdated = 0;
+  string location;
+  vector<string> tags;
+  vector<Parameter> parameters;
+  string notes;
+  string digikeyPartNumber;
+  string datasheetUrl;
+  string productUrl;
+  string syncStatus = "synced";
+  string sku;
+  time_t lastUpdated = 0;
 
   bool lowStock() const;
   bool hasMissingMetadata() const;
-  std::string searchableText() const;
+  string searchableText() const;
 };
 
 struct ActivityEntry {
-  std::time_t timestamp = 0;
-  std::string kind;
-  std::string message;
+  time_t timestamp = 0;
+  string kind;
+  string message;
 };
 
 struct Summary {
-  std::size_t itemCount = 0;
-  std::size_t totalUnits = 0;
-  std::size_t lowStockCount = 0;
-  std::size_t missingMetadataCount = 0;
-  std::size_t unsyncedCount = 0;
+  size_t itemCount = 0;
+  size_t totalUnits = 0;
+  size_t lowStockCount = 0;
+  size_t missingMetadataCount = 0;
+  size_t unsyncedCount = 0;
 };
 
 struct ScanResolution {
   bool matched = false;
   bool created = false;
-  std::string itemId;
-  std::string message;
+  string itemId;
+  string message;
 };
 
-std::string trim(const std::string& value);
-std::string toLower(std::string value);
-std::string nowTimestampString(std::time_t value);
-std::string makeId();
-std::string join(const std::vector<std::string>& values, char delimiter);
-std::vector<std::string> split(const std::string& value, char delimiter);
-std::vector<std::string> tokenizeQuery(const std::string& query);
+string trim(const string& value);
+string toLower(string value);
+string nowTimestampString(time_t value);
+string makeId();
+string join(const vector<string>& values, char delimiter);
+vector<string> split(const string& value, char delimiter);
+vector<string> tokenizeQuery(const string& query);
 
-bool containsInsensitive(std::string_view haystack, std::string_view needle);
-bool matchesQuery(const InventoryItem& item, const std::string& query);
-std::vector<std::size_t> filterItems(const std::vector<InventoryItem>& items, const std::string& query);
-Summary summarize(const std::vector<InventoryItem>& items);
+bool containsInsensitive(string_view haystack, string_view needle);
+bool matchesQuery(const InventoryItem& item, const string& query);
+vector<size_t> filterItems(const vector<InventoryItem>& items, const string& query);
+Summary summarize(const vector<InventoryItem>& items);
 
-std::vector<InventoryItem> seedInventory();
+vector<InventoryItem> seedInventory();
 
 class InventoryStore {
  public:
-  std::vector<InventoryItem>& items();
-  const std::vector<InventoryItem>& items() const;
+  vector<InventoryItem>& items();
+  const vector<InventoryItem>& items() const;
 
-  bool load(const std::filesystem::path& path);
-  bool save(const std::filesystem::path& path) const;
+  bool load(const filesystem::path& path);
+  bool save(const filesystem::path& path) const;
 
-  InventoryItem* findById(const std::string& id);
-  const InventoryItem* findById(const std::string& id) const;
-  InventoryItem* findByCode(const std::string& code);
-  const InventoryItem* findByCode(const std::string& code) const;
+  InventoryItem* findById(const string& id);
+  const InventoryItem* findById(const string& id) const;
+  InventoryItem* findByCode(const string& code);
+  const InventoryItem* findByCode(const string& code) const;
 
  private:
-  std::vector<InventoryItem> items_;
+  vector<InventoryItem> items_;
 };
 
-bool loadActivities(const std::filesystem::path& path, std::vector<ActivityEntry>& activities);
-bool saveActivities(const std::filesystem::path& path, const std::vector<ActivityEntry>& activities);
-void appendActivity(std::vector<ActivityEntry>& activities, const ActivityEntry& entry, std::size_t maxEntries = 100);
-ActivityEntry makeActivity(std::string kind, std::string message);
+bool loadActivities(const filesystem::path& path, vector<ActivityEntry>& activities);
+bool saveActivities(const filesystem::path& path, const vector<ActivityEntry>& activities);
+void appendActivity(vector<ActivityEntry>& activities, const ActivityEntry& entry, size_t maxEntries = 100);
+ActivityEntry makeActivity(string kind, string message);
 
-ScanResolution resolveScanCode(InventoryStore& store, const std::string& rawCode);
+ScanResolution resolveScanCode(InventoryStore& store, const string& rawCode);
 
-std::string serializeItem(const InventoryItem& item);
-bool deserializeItem(const std::string& line, InventoryItem& item);
-std::string serializeActivity(const ActivityEntry& entry);
-bool deserializeActivity(const std::string& line, ActivityEntry& entry);
+string serializeItem(const InventoryItem& item);
+bool deserializeItem(const string& line, InventoryItem& item);
+string serializeActivity(const ActivityEntry& entry);
+bool deserializeActivity(const string& line, ActivityEntry& entry);
 
 }  // namespace hims
 

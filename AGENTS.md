@@ -27,6 +27,9 @@ The goals are:
 - Keep the UI industrial, clean, and readable.
 - Avoid adding unnecessary layers or frameworks.
 - Favor clear data flow and simple state handling.
+- Keep page-specific terminal UI code under `src/ui/pages/`.
+- Keep shared UI formatting helpers under `src/ui/shared/`.
+- Keep the mobile scanner page in `src/platform/web/scanner.html`, and remember it is copied into the runtime output during the build.
 
 ## Data And Files
 
@@ -74,3 +77,4 @@ If the app is already running and the linker cannot overwrite the executable, cl
 - Preserve the existing keyboard shortcuts unless a change explicitly improves them.
 - Prefer incremental changes that keep the terminal responsive.
 - If you touch rendering code, verify that the screen does not flicker and that redraws are only triggered when needed.
+- Use a short standard file header comment on touched C++ files, and add brief comments only where logic is non-obvious.

@@ -18,15 +18,17 @@
 
 namespace hims {
 
+using namespace std;
+
 namespace {
 
-std::time_t nowEpoch() {
-  return std::time(nullptr);
+time_t nowEpoch() {
+  return time(nullptr);
 }
 
-std::vector<std::string> splitTokensRespectingQuotes(const std::string& query) {
-  std::vector<std::string> tokens;
-  std::string current;
+vector<string> splitTokensRespectingQuotes(const string& query) {
+  vector<string> tokens;
+  string current;
   bool inQuotes = false;
 
   for (char ch : query) {
@@ -35,7 +37,7 @@ std::vector<std::string> splitTokensRespectingQuotes(const std::string& query) {
       continue;
     }
 
-    if (!inQuotes && std::isspace(static_cast<unsigned char>(ch))) {
+    if (!inQuotes && isspace(static_cast<unsigned char>(ch))) {
       if (!current.empty()) {
         tokens.push_back(current);
         current.clear();
@@ -53,20 +55,20 @@ std::vector<std::string> splitTokensRespectingQuotes(const std::string& query) {
   return tokens;
 }
 
-bool tokenMatchesParameter(const InventoryItem& item, const std::string& value) {
+bool tokenMatchesParameter(const InventoryItem& item, const string& value) {
   const auto equalsPos = value.find('=');
-  const auto needleKey = toLower(equalsPos == std::string::npos ? value : value.substr(0, equalsPos));
-  const auto needleValue = equalsPos == std::string::npos ? std::string() : toLower(value.substr(equalsPos + 1));
+  const auto needleKey = toLower(equalsPos == string::npos ? value : value.substr(0, equalsPos));
+  const auto needleValue = equalsPos == string::npos ? string() : toLower(value.substr(equalsPos + 1));
 
   for (const auto& parameter : item.parameters) {
     const auto key = toLower(parameter.name);
     const auto parameterValue = toLower(parameter.value);
 
-    if (!needleKey.empty() && key.find(needleKey) == std::string::npos) {
+    if (!needleKey.empty() && key.find(needleKey) == string::npos) {
       continue;
     }
 
-    if (needleValue.empty() || parameterValue.find(needleValue) != std::string::npos) {
+    if (needleValue.empty() || parameterValue.find(needleValue) != string::npos) {
       return true;
     }
   }
@@ -74,26 +76,26 @@ bool tokenMatchesParameter(const InventoryItem& item, const std::string& value) 
   return false;
 }
 
-bool tokenMatchesQuantity(const InventoryItem& item, const std::string& token) {
+bool tokenMatchesQuantity(const InventoryItem& item, const string& token) {
   if (token.rfind("qty>=", 0) == 0) {
-    return item.quantity >= std::stoi(token.substr(5));
+    return item.quantity >= stoi(token.substr(5));
   }
   if (token.rfind("qty<=", 0) == 0) {
-    return item.quantity <= std::stoi(token.substr(5));
+    return item.quantity <= stoi(token.substr(5));
   }
   if (token.rfind("qty>", 0) == 0) {
-    return item.quantity > std::stoi(token.substr(4));
+    return item.quantity > stoi(token.substr(4));
   }
   if (token.rfind("qty<", 0) == 0) {
-    return item.quantity < std::stoi(token.substr(4));
+    return item.quantity < stoi(token.substr(4));
   }
   if (token.rfind("qty=", 0) == 0) {
-    return item.quantity == std::stoi(token.substr(4));
+    return item.quantity == stoi(token.substr(4));
   }
   return false;
 }
 
-bool tokenMatchesStatus(const InventoryItem& item, const std::string& value) {
+bool tokenMatchesStatus(const InventoryItem& item, const string& value) {
   const auto lowerValue = toLower(value);
   if (lowerValue == "low") {
     return item.lowStock();
@@ -110,20 +112,20 @@ bool tokenMatchesStatus(const InventoryItem& item, const std::string& value) {
   return containsInsensitive(item.syncStatus, lowerValue);
 }
 
-bool tokenMatchesCategory(const InventoryItem& item, const std::string& value) {
+bool tokenMatchesCategory(const InventoryItem& item, const string& value) {
   return containsInsensitive(item.category, value);
 }
 
-bool tokenMatchesField(const std::string& field, const std::string& value) {
+bool tokenMatchesField(const string& field, const string& value) {
   return containsInsensitive(field, value);
 }
 
-std::string sanitizeIdPart(const std::string& value) {
-  std::string output;
+string sanitizeIdPart(const string& value) {
+  string output;
   output.reserve(value.size());
   for (char ch : value) {
-    if (std::isalnum(static_cast<unsigned char>(ch))) {
-      output.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    if (isalnum(static_cast<unsigned char>(ch))) {
+      output.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
     } else if (!output.empty() && output.back() != '-') {
       output.push_back('-');
     }
@@ -206,14 +208,14 @@ struct SqliteApi {
       return true;
     }
 
-    const std::filesystem::path candidates[] = {
-        std::filesystem::path("sqlite3.dll"),
-        std::filesystem::current_path() / "sqlite3.dll",
-        std::filesystem::path(R"(C:\Users\pawci\.platformio\python3\DLLs\sqlite3.dll)"),
-        std::filesystem::path(R"(C:\Users\pawci\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\DLLs\sqlite3.dll)"),
-        std::filesystem::path(R"(C:\Users\pawci\AppData\Local\Programs\KiCad\10.0\bin\sqlite3.dll)"),
-        std::filesystem::path(R"(C:\Program Files\Blender Foundation\Blender 5.1\5.1\python\DLLs\sqlite3.dll)"),
-        std::filesystem::path(R"(C:\Program Files\Blender Foundation\Blender 5.1\python\DLLs\sqlite3.dll)")};
+    const filesystem::path candidates[] = {
+        filesystem::path("sqlite3.dll"),
+        filesystem::current_path() / "sqlite3.dll",
+        filesystem::path(R"(C:\Users\pawci\.platformio\python3\DLLs\sqlite3.dll)"),
+        filesystem::path(R"(C:\Users\pawci\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\DLLs\sqlite3.dll)"),
+        filesystem::path(R"(C:\Users\pawci\AppData\Local\Programs\KiCad\10.0\bin\sqlite3.dll)"),
+        filesystem::path(R"(C:\Program Files\Blender Foundation\Blender 5.1\5.1\python\DLLs\sqlite3.dll)"),
+        filesystem::path(R"(C:\Program Files\Blender Foundation\Blender 5.1\python\DLLs\sqlite3.dll)")};
 
     for (const auto& candidate : candidates) {
       module = LoadLibraryW(candidate.wstring().c_str());
@@ -287,12 +289,12 @@ struct SqliteStatement {
   }
 };
 
-std::string sqliteText(sqlite3_stmt* stmt, int column) {
+string sqliteText(sqlite3_stmt* stmt, int column) {
   const auto* text = sqliteApi().column_text(stmt, column);
-  return text == nullptr ? std::string() : reinterpret_cast<const char*>(text);
+  return text == nullptr ? string() : reinterpret_cast<const char*>(text);
 }
 
-bool openDatabase(const std::filesystem::path& path, SqliteConnection& connection) {
+bool openDatabase(const filesystem::path& path, SqliteConnection& connection) {
   const auto& api = sqliteApi();
   if (api.open_v2 == nullptr) {
     return false;
@@ -307,7 +309,7 @@ bool openDatabase(const std::filesystem::path& path, SqliteConnection& connectio
   return true;
 }
 
-bool execSql(SqliteConnection& connection, const std::string& sql) {
+bool execSql(SqliteConnection& connection, const string& sql) {
   char* error = nullptr;
   const auto rc = sqliteApi().exec(connection.db, sql.c_str(), nullptr, nullptr, &error);
   if (error != nullptr) {
@@ -316,9 +318,9 @@ bool execSql(SqliteConnection& connection, const std::string& sql) {
   return rc == SQLITE_OK;
 }
 
-bool tableExists(SqliteConnection& connection, const std::string& tableName) {
+bool tableExists(SqliteConnection& connection, const string& tableName) {
   SqliteStatement statement;
-  const std::string sql = "SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1";
+  const string sql = "SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1";
   if (sqliteApi().prepare_v2(connection.db, sql.c_str(), -1, &statement.stmt, nullptr) != SQLITE_OK) {
     return false;
   }
@@ -326,8 +328,8 @@ bool tableExists(SqliteConnection& connection, const std::string& tableName) {
   return sqliteApi().step(statement.stmt) == SQLITE_ROW;
 }
 
-std::string joinParametersForDb(const std::vector<Parameter>& parameters) {
-  std::vector<std::string> serialized;
+string joinParametersForDb(const vector<Parameter>& parameters) {
+  vector<string> serialized;
   serialized.reserve(parameters.size());
   for (const auto& parameter : parameters) {
     serialized.push_back(parameter.name + "=" + parameter.value);
@@ -335,11 +337,11 @@ std::string joinParametersForDb(const std::vector<Parameter>& parameters) {
   return join(serialized, ';');
 }
 
-std::vector<Parameter> parseParametersFromDb(const std::string& value) {
-  std::vector<Parameter> parameters;
+vector<Parameter> parseParametersFromDb(const string& value) {
+  vector<Parameter> parameters;
   for (const auto& entry : split(value, ';')) {
     const auto equalsPos = entry.find('=');
-    if (equalsPos == std::string::npos) {
+    if (equalsPos == string::npos) {
       continue;
     }
     parameters.push_back({trim(entry.substr(0, equalsPos)), trim(entry.substr(equalsPos + 1))});
@@ -347,11 +349,11 @@ std::vector<Parameter> parseParametersFromDb(const std::string& value) {
   return parameters;
 }
 
-std::string joinTagsForDb(const std::vector<std::string>& tags) {
+string joinTagsForDb(const vector<string>& tags) {
   return join(tags, '|');
 }
 
-std::vector<std::string> parseTagsFromDb(const std::string& value) {
+vector<string> parseTagsFromDb(const string& value) {
   return split(value, '|');
 }
 
@@ -383,7 +385,7 @@ InventoryItem legacyRowToItem(sqlite3_stmt* stmt) {
   const auto filamentColor = sqliteText(stmt, 29);
   const auto filamentDiameterMm = sqliteText(stmt, 30);
 
-  item.id = std::to_string(legacyId);
+  item.id = to_string(legacyId);
   item.partName = partNumber.empty() ? description : partNumber;
   item.manufacturer = manufacturer;
   item.category = category.empty() ? subcategory : (subcategory.empty() ? category : category + " / " + subcategory);
@@ -462,7 +464,7 @@ bool createHimsTable(SqliteConnection& connection) {
   )SQL");
 }
 
-bool loadItemsFromHimsTable(SqliteConnection& connection, std::vector<InventoryItem>& items) {
+bool loadItemsFromHimsTable(SqliteConnection& connection, vector<InventoryItem>& items) {
   SqliteStatement statement;
   const char* sql = R"SQL(
     SELECT id, part_name, manufacturer, category, quantity, reorder_threshold, location,
@@ -493,14 +495,14 @@ bool loadItemsFromHimsTable(SqliteConnection& connection, std::vector<InventoryI
     item.productUrl = sqliteText(statement.stmt, 12);
     item.syncStatus = sqliteText(statement.stmt, 13);
     item.sku = sqliteText(statement.stmt, 14);
-    item.lastUpdated = static_cast<std::time_t>(sqliteApi().column_int64(statement.stmt, 15));
-    items.push_back(std::move(item));
+    item.lastUpdated = static_cast<time_t>(sqliteApi().column_int64(statement.stmt, 15));
+    items.push_back(move(item));
   }
 
   return true;
 }
 
-bool importLegacyItems(SqliteConnection& connection, std::vector<InventoryItem>& items) {
+bool importLegacyItems(SqliteConnection& connection, vector<InventoryItem>& items) {
   SqliteStatement statement;
   const char* sql = R"SQL(
     SELECT id, part_number, part_number_normalized, quantity, location, manufacturer, package, description,
@@ -524,7 +526,7 @@ bool importLegacyItems(SqliteConnection& connection, std::vector<InventoryItem>&
   return true;
 }
 
-bool writeItemsToHimsTable(SqliteConnection& connection, const std::vector<InventoryItem>& items) {
+bool writeItemsToHimsTable(SqliteConnection& connection, const vector<InventoryItem>& items) {
   if (!createHimsTable(connection)) {
     return false;
   }
@@ -598,8 +600,8 @@ bool InventoryItem::hasMissingMetadata() const {
          datasheetUrl.empty() || productUrl.empty();
 }
 
-std::string InventoryItem::searchableText() const {
-  std::ostringstream out;
+string InventoryItem::searchableText() const {
+  ostringstream out;
   out << partName << ' ' << manufacturer << ' ' << category << ' ' << location << ' ' << notes << ' '
       << digikeyPartNumber << ' ' << datasheetUrl << ' ' << productUrl << ' ' << sku << ' ' << syncStatus;
 
@@ -614,53 +616,53 @@ std::string InventoryItem::searchableText() const {
   return toLower(out.str());
 }
 
-std::string trim(const std::string& value) {
-  const auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char ch) {
-    return std::isspace(ch) != 0;
+string trim(const string& value) {
+  const auto begin = find_if_not(value.begin(), value.end(), [](unsigned char ch) {
+    return isspace(ch) != 0;
   });
-  const auto end = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char ch) {
-    return std::isspace(ch) != 0;
+  const auto end = find_if_not(value.rbegin(), value.rend(), [](unsigned char ch) {
+    return isspace(ch) != 0;
   }).base();
 
   if (begin >= end) {
     return {};
   }
 
-  return std::string(begin, end);
+  return string(begin, end);
 }
 
-std::string toLower(std::string value) {
-  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-    return static_cast<char>(std::tolower(ch));
+string toLower(string value) {
+  transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+    return static_cast<char>(tolower(ch));
   });
   return value;
 }
 
-std::string nowTimestampString(std::time_t value) {
-  std::tm tm{};
+string nowTimestampString(time_t value) {
+  tm tm{};
 #ifdef _WIN32
   localtime_s(&tm, &value);
 #else
   localtime_r(&value, &tm);
 #endif
   char buffer[32];
-  std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &tm);
+  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &tm);
   return buffer;
 }
 
-std::string makeId() {
-  const auto stamp = std::chrono::system_clock::now().time_since_epoch().count();
-  std::mt19937_64 rng(static_cast<std::mt19937_64::result_type>(stamp));
-  std::uniform_int_distribution<unsigned long long> dist;
-  std::ostringstream out;
-  out << std::hex << std::setw(10) << std::setfill('0') << (stamp & 0xfffffffffULL) << '-'
-      << std::setw(10) << std::setfill('0') << (dist(rng) & 0xfffffffffULL);
+string makeId() {
+  const auto stamp = chrono::system_clock::now().time_since_epoch().count();
+  mt19937_64 rng(static_cast<mt19937_64::result_type>(stamp));
+  uniform_int_distribution<unsigned long long> dist;
+  ostringstream out;
+  out << hex << setw(10) << setfill('0') << (stamp & 0xfffffffffULL) << '-'
+      << setw(10) << setfill('0') << (dist(rng) & 0xfffffffffULL);
   return out.str();
 }
 
-std::string join(const std::vector<std::string>& values, char delimiter) {
-  std::ostringstream out;
-  for (std::size_t index = 0; index < values.size(); ++index) {
+string join(const vector<string>& values, char delimiter) {
+  ostringstream out;
+  for (size_t index = 0; index < values.size(); ++index) {
     if (index > 0) {
       out << delimiter;
     }
@@ -669,12 +671,12 @@ std::string join(const std::vector<std::string>& values, char delimiter) {
   return out.str();
 }
 
-std::vector<std::string> split(const std::string& value, char delimiter) {
-  std::vector<std::string> values;
-  std::string current;
-  std::istringstream input(value);
+vector<string> split(const string& value, char delimiter) {
+  vector<string> values;
+  string current;
+  istringstream input(value);
 
-  while (std::getline(input, current, delimiter)) {
+  while (getline(input, current, delimiter)) {
     current = trim(current);
     if (!current.empty()) {
       values.push_back(current);
@@ -684,23 +686,23 @@ std::vector<std::string> split(const std::string& value, char delimiter) {
   return values;
 }
 
-std::vector<std::string> tokenizeQuery(const std::string& query) {
+vector<string> tokenizeQuery(const string& query) {
   return splitTokensRespectingQuotes(trim(query));
 }
 
-bool containsInsensitive(std::string_view haystack, std::string_view needle) {
+bool containsInsensitive(string_view haystack, string_view needle) {
   if (needle.empty()) {
     return true;
   }
 
-  std::string loweredHaystack(haystack);
-  std::string loweredNeedle(needle);
-  loweredHaystack = toLower(std::move(loweredHaystack));
-  loweredNeedle = toLower(std::move(loweredNeedle));
-  return loweredHaystack.find(loweredNeedle) != std::string::npos;
+  string loweredHaystack(haystack);
+  string loweredNeedle(needle);
+  loweredHaystack = toLower(move(loweredHaystack));
+  loweredNeedle = toLower(move(loweredNeedle));
+  return loweredHaystack.find(loweredNeedle) != string::npos;
 }
 
-bool matchesQuery(const InventoryItem& item, const std::string& query) {
+bool matchesQuery(const InventoryItem& item, const string& query) {
   const auto tokens = tokenizeQuery(query);
   if (tokens.empty()) {
     return true;
@@ -763,7 +765,7 @@ bool matchesQuery(const InventoryItem& item, const std::string& query) {
 
     if (token.rfind("tag:", 0) == 0) {
       const auto value = token.substr(4);
-      const auto matched = std::any_of(item.tags.begin(), item.tags.end(), [&](const std::string& tag) {
+      const auto matched = any_of(item.tags.begin(), item.tags.end(), [&](const string& tag) {
         return containsInsensitive(tag, value);
       });
       if (matched) {
@@ -798,9 +800,9 @@ bool matchesQuery(const InventoryItem& item, const std::string& query) {
   return true;
 }
 
-std::vector<std::size_t> filterItems(const std::vector<InventoryItem>& items, const std::string& query) {
-  std::vector<std::size_t> indices;
-  for (std::size_t index = 0; index < items.size(); ++index) {
+vector<size_t> filterItems(const vector<InventoryItem>& items, const string& query) {
+  vector<size_t> indices;
+  for (size_t index = 0; index < items.size(); ++index) {
     if (matchesQuery(items[index], query)) {
       indices.push_back(index);
     }
@@ -808,12 +810,12 @@ std::vector<std::size_t> filterItems(const std::vector<InventoryItem>& items, co
   return indices;
 }
 
-Summary summarize(const std::vector<InventoryItem>& items) {
+Summary summarize(const vector<InventoryItem>& items) {
   Summary summary;
   summary.itemCount = items.size();
 
   for (const auto& item : items) {
-    summary.totalUnits += static_cast<std::size_t>(std::max(item.quantity, 0));
+    summary.totalUnits += static_cast<size_t>(max(item.quantity, 0));
     if (item.lowStock()) {
       ++summary.lowStockCount;
     }
@@ -828,8 +830,8 @@ Summary summarize(const std::vector<InventoryItem>& items) {
   return summary;
 }
 
-std::vector<InventoryItem> seedInventory() {
-  std::vector<InventoryItem> items;
+vector<InventoryItem> seedInventory() {
+  vector<InventoryItem> items;
 
   items.push_back({
       "res-0603-10k",
@@ -929,15 +931,15 @@ std::vector<InventoryItem> seedInventory() {
   return items;
 }
 
-std::vector<InventoryItem>& InventoryStore::items() {
+vector<InventoryItem>& InventoryStore::items() {
   return items_;
 }
 
-const std::vector<InventoryItem>& InventoryStore::items() const {
+const vector<InventoryItem>& InventoryStore::items() const {
   return items_;
 }
 
-bool InventoryStore::load(const std::filesystem::path& path) {
+bool InventoryStore::load(const filesystem::path& path) {
   items_.clear();
 #ifdef _WIN32
   SqliteConnection connection;
@@ -949,29 +951,29 @@ bool InventoryStore::load(const std::filesystem::path& path) {
   const bool hasHimsTable = tableExists(connection, "hims_items");
   const bool hasLegacyTable = tableExists(connection, "items");
 
-  std::vector<InventoryItem> himsItems;
+  vector<InventoryItem> himsItems;
   bool loaded = false;
   if (hasHimsTable) {
     loaded = loadItemsFromHimsTable(connection, himsItems);
   }
 
-  std::vector<InventoryItem> legacyItems;
+  vector<InventoryItem> legacyItems;
   if (hasLegacyTable) {
     importLegacyItems(connection, legacyItems);
   }
 
   if (!legacyItems.empty() && (himsItems.empty() || legacyItems.size() > himsItems.size())) {
-    items_ = std::move(legacyItems);
+    items_ = move(legacyItems);
     loaded = true;
     writeItemsToHimsTable(connection, items_);
   } else if (loaded && !himsItems.empty()) {
-    items_ = std::move(himsItems);
+    items_ = move(himsItems);
   } else if (!loaded || items_.empty()) {
     if (!himsItems.empty()) {
-      items_ = std::move(himsItems);
+      items_ = move(himsItems);
       loaded = true;
     } else if (!legacyItems.empty()) {
-      items_ = std::move(legacyItems);
+      items_ = move(legacyItems);
       loaded = true;
       writeItemsToHimsTable(connection, items_);
     }
@@ -985,14 +987,14 @@ bool InventoryStore::load(const std::filesystem::path& path) {
 
   return true;
 #else
-  std::ifstream file(path);
+  ifstream file(path);
   if (!file) {
     items_ = seedInventory();
     return false;
   }
 
-  std::string line;
-  while (std::getline(file, line)) {
+  string line;
+  while (getline(file, line)) {
     line = trim(line);
     if (line.empty() || line.front() == '#') {
       continue;
@@ -1000,7 +1002,7 @@ bool InventoryStore::load(const std::filesystem::path& path) {
 
     InventoryItem item;
     if (deserializeItem(line, item)) {
-      items_.push_back(std::move(item));
+      items_.push_back(move(item));
     }
   }
 
@@ -1013,7 +1015,7 @@ bool InventoryStore::load(const std::filesystem::path& path) {
 #endif
 }
 
-bool InventoryStore::save(const std::filesystem::path& path) const {
+bool InventoryStore::save(const filesystem::path& path) const {
 #ifdef _WIN32
   SqliteConnection connection;
   if (!openDatabase(path, connection)) {
@@ -1022,9 +1024,9 @@ bool InventoryStore::save(const std::filesystem::path& path) const {
 
   return writeItemsToHimsTable(connection, items_);
 #else
-  std::filesystem::create_directories(path.parent_path());
+  filesystem::create_directories(path.parent_path());
 
-  std::ofstream file(path, std::ios::trunc);
+  ofstream file(path, ios::trunc);
   if (!file) {
     return false;
   }
@@ -1037,65 +1039,65 @@ bool InventoryStore::save(const std::filesystem::path& path) const {
 #endif
 }
 
-InventoryItem* InventoryStore::findById(const std::string& id) {
-  const auto it = std::find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
+InventoryItem* InventoryStore::findById(const string& id) {
+  const auto it = find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
     return item.id == id;
   });
   return it == items_.end() ? nullptr : &(*it);
 }
 
-const InventoryItem* InventoryStore::findById(const std::string& id) const {
-  const auto it = std::find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
+const InventoryItem* InventoryStore::findById(const string& id) const {
+  const auto it = find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
     return item.id == id;
   });
   return it == items_.end() ? nullptr : &(*it);
 }
 
-InventoryItem* InventoryStore::findByCode(const std::string& code) {
+InventoryItem* InventoryStore::findByCode(const string& code) {
   const auto needle = toLower(trim(code));
-  const auto it = std::find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
+  const auto it = find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
     return toLower(item.id) == needle || toLower(item.sku) == needle || toLower(item.digikeyPartNumber) == needle ||
            containsInsensitive(item.productUrl, needle) || containsInsensitive(item.datasheetUrl, needle);
   });
   return it == items_.end() ? nullptr : &(*it);
 }
 
-const InventoryItem* InventoryStore::findByCode(const std::string& code) const {
+const InventoryItem* InventoryStore::findByCode(const string& code) const {
   const auto needle = toLower(trim(code));
-  const auto it = std::find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
+  const auto it = find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
     return toLower(item.id) == needle || toLower(item.sku) == needle || toLower(item.digikeyPartNumber) == needle ||
            containsInsensitive(item.productUrl, needle) || containsInsensitive(item.datasheetUrl, needle);
   });
   return it == items_.end() ? nullptr : &(*it);
 }
 
-std::string serializeItem(const InventoryItem& item) {
-  std::ostringstream out;
-  std::vector<std::string> parameterEntries;
+string serializeItem(const InventoryItem& item) {
+  ostringstream out;
+  vector<string> parameterEntries;
   parameterEntries.reserve(item.parameters.size());
   for (const auto& parameter : item.parameters) {
     parameterEntries.push_back(parameter.name + "=" + parameter.value);
   }
 
-  out << std::quoted(item.id) << '\t' << std::quoted(item.partName) << '\t' << std::quoted(item.manufacturer)
-      << '\t' << std::quoted(item.category) << '\t' << item.quantity << '\t' << item.reorderThreshold << '\t'
-      << std::quoted(item.location) << '\t' << std::quoted(join(item.tags, '|')) << '\t'
-      << std::quoted(join(parameterEntries, ';'))
-      << '\t' << std::quoted(item.notes) << '\t' << std::quoted(item.digikeyPartNumber) << '\t'
-      << std::quoted(item.datasheetUrl) << '\t' << std::quoted(item.productUrl) << '\t'
-      << std::quoted(item.syncStatus) << '\t' << std::quoted(item.sku) << '\t' << item.lastUpdated;
+  out << quoted(item.id) << '\t' << quoted(item.partName) << '\t' << quoted(item.manufacturer)
+      << '\t' << quoted(item.category) << '\t' << item.quantity << '\t' << item.reorderThreshold << '\t'
+      << quoted(item.location) << '\t' << quoted(join(item.tags, '|')) << '\t'
+      << quoted(join(parameterEntries, ';'))
+      << '\t' << quoted(item.notes) << '\t' << quoted(item.digikeyPartNumber) << '\t'
+      << quoted(item.datasheetUrl) << '\t' << quoted(item.productUrl) << '\t'
+      << quoted(item.syncStatus) << '\t' << quoted(item.sku) << '\t' << item.lastUpdated;
   return out.str();
 }
 
-bool deserializeItem(const std::string& line, InventoryItem& item) {
-  std::istringstream input(line);
-  std::string tags;
-  std::string parameters;
-  if (!(input >> std::quoted(item.id) >> std::quoted(item.partName) >> std::quoted(item.manufacturer) >>
-        std::quoted(item.category) >> item.quantity >> item.reorderThreshold >> std::quoted(item.location) >>
-        std::quoted(tags) >> std::quoted(parameters) >> std::quoted(item.notes) >>
-        std::quoted(item.digikeyPartNumber) >> std::quoted(item.datasheetUrl) >> std::quoted(item.productUrl) >>
-        std::quoted(item.syncStatus) >> std::quoted(item.sku) >> item.lastUpdated)) {
+bool deserializeItem(const string& line, InventoryItem& item) {
+  istringstream input(line);
+  string tags;
+  string parameters;
+  if (!(input >> quoted(item.id) >> quoted(item.partName) >> quoted(item.manufacturer) >>
+        quoted(item.category) >> item.quantity >> item.reorderThreshold >> quoted(item.location) >>
+        quoted(tags) >> quoted(parameters) >> quoted(item.notes) >>
+        quoted(item.digikeyPartNumber) >> quoted(item.datasheetUrl) >> quoted(item.productUrl) >>
+        quoted(item.syncStatus) >> quoted(item.sku) >> item.lastUpdated)) {
     return false;
   }
 
@@ -1103,7 +1105,7 @@ bool deserializeItem(const std::string& line, InventoryItem& item) {
   item.parameters.clear();
   for (const auto& entry : split(parameters, ';')) {
     const auto equalsPos = entry.find('=');
-    if (equalsPos == std::string::npos) {
+    if (equalsPos == string::npos) {
       continue;
     }
     item.parameters.push_back({trim(entry.substr(0, equalsPos)), trim(entry.substr(equalsPos + 1))});
@@ -1116,30 +1118,30 @@ bool deserializeItem(const std::string& line, InventoryItem& item) {
   return true;
 }
 
-std::string serializeActivity(const ActivityEntry& entry) {
-  std::ostringstream out;
-  out << entry.timestamp << '\t' << std::quoted(entry.kind) << '\t' << std::quoted(entry.message);
+string serializeActivity(const ActivityEntry& entry) {
+  ostringstream out;
+  out << entry.timestamp << '\t' << quoted(entry.kind) << '\t' << quoted(entry.message);
   return out.str();
 }
 
-bool deserializeActivity(const std::string& line, ActivityEntry& entry) {
-  std::istringstream input(line);
-  if (!(input >> entry.timestamp >> std::quoted(entry.kind) >> std::quoted(entry.message))) {
+bool deserializeActivity(const string& line, ActivityEntry& entry) {
+  istringstream input(line);
+  if (!(input >> entry.timestamp >> quoted(entry.kind) >> quoted(entry.message))) {
     return false;
   }
   return true;
 }
 
-bool loadActivities(const std::filesystem::path& path, std::vector<ActivityEntry>& activities) {
+bool loadActivities(const filesystem::path& path, vector<ActivityEntry>& activities) {
   activities.clear();
 
-  std::ifstream file(path);
+  ifstream file(path);
   if (!file) {
     return false;
   }
 
-  std::string line;
-  while (std::getline(file, line)) {
+  string line;
+  while (getline(file, line)) {
     line = trim(line);
     if (line.empty() || line.front() == '#') {
       continue;
@@ -1147,17 +1149,17 @@ bool loadActivities(const std::filesystem::path& path, std::vector<ActivityEntry
 
     ActivityEntry entry;
     if (deserializeActivity(line, entry)) {
-      activities.push_back(std::move(entry));
+      activities.push_back(move(entry));
     }
   }
 
   return true;
 }
 
-bool saveActivities(const std::filesystem::path& path, const std::vector<ActivityEntry>& activities) {
-  std::filesystem::create_directories(path.parent_path());
+bool saveActivities(const filesystem::path& path, const vector<ActivityEntry>& activities) {
+  filesystem::create_directories(path.parent_path());
 
-  std::ofstream file(path, std::ios::trunc);
+  ofstream file(path, ios::trunc);
   if (!file) {
     return false;
   }
@@ -1169,18 +1171,18 @@ bool saveActivities(const std::filesystem::path& path, const std::vector<Activit
   return true;
 }
 
-void appendActivity(std::vector<ActivityEntry>& activities, const ActivityEntry& entry, std::size_t maxEntries) {
+void appendActivity(vector<ActivityEntry>& activities, const ActivityEntry& entry, size_t maxEntries) {
   activities.push_back(entry);
   if (activities.size() > maxEntries) {
-    activities.erase(activities.begin(), activities.begin() + static_cast<std::ptrdiff_t>(activities.size() - maxEntries));
+    activities.erase(activities.begin(), activities.begin() + static_cast<ptrdiff_t>(activities.size() - maxEntries));
   }
 }
 
-ActivityEntry makeActivity(std::string kind, std::string message) {
-  return {nowEpoch(), std::move(kind), std::move(message)};
+ActivityEntry makeActivity(string kind, string message) {
+  return {nowEpoch(), move(kind), move(message)};
 }
 
-ScanResolution resolveScanCode(InventoryStore& store, const std::string& rawCode) {
+ScanResolution resolveScanCode(InventoryStore& store, const string& rawCode) {
   const auto code = trim(rawCode);
   if (code.empty()) {
     return {false, false, {}, "Empty scan code"};
@@ -1204,8 +1206,9 @@ ScanResolution resolveScanCode(InventoryStore& store, const std::string& rawCode
   item.syncStatus = "needs_metadata";
   item.sku = code;
   item.lastUpdated = nowEpoch();
-  store.items().push_back(std::move(item));
+  store.items().push_back(move(item));
   return {true, true, store.items().back().id, "Created a placeholder item from the scanned code"};
 }
 
 }  // namespace hims
+
