@@ -162,6 +162,11 @@ void App::handleStockKey(const KeyEvent& key) {
         break;
       case 'r':
         store_.load(inventoryPath_);
+        loadInventoryHistory(inventoryPath_, inventoryHistory_);
+        if (inventoryHistory_.empty()) {
+          appendInventoryHistory(inventoryHistory_, makeInventoryHistoryPoint(store_.items()));
+        }
+        saveInventoryHistory(inventoryPath_, inventoryHistory_);
         syncSelectionToFilter();
         setMessage("Inventory refreshed", 2);
         break;

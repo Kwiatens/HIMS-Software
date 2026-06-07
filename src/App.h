@@ -143,6 +143,7 @@ class App {
   size_t stockScroll_ = 0;
   size_t detailScroll_ = 0;
   vector<string> scanQueue_;
+  vector<InventoryHistoryPoint> inventoryHistory_;
   mutex scanMutex_;
   bool running_ = true;
   bool dirty_ = true;

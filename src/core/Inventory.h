@@ -52,6 +52,15 @@ struct Summary {
   size_t unsyncedCount = 0;
 };
 
+struct InventoryHistoryPoint {
+  time_t timestamp = 0;
+  size_t itemCount = 0;
+  size_t totalUnits = 0;
+  size_t lowStockCount = 0;
+  size_t outOfStockCount = 0;
+  size_t dataErrorCount = 0;
+};
+
 struct ScanResolution {
   bool matched = false;
   bool created = false;
@@ -71,6 +80,13 @@ bool containsInsensitive(string_view haystack, string_view needle);
 bool matchesQuery(const InventoryItem& item, const string& query);
 vector<size_t> filterItems(const vector<InventoryItem>& items, const string& query);
 Summary summarize(const vector<InventoryItem>& items);
+int categoryLowStockThreshold(const string& category);
+bool lowStockByCategory(const InventoryItem& item);
+InventoryHistoryPoint makeInventoryHistoryPoint(const vector<InventoryItem>& items, time_t timestamp = 0);
+bool loadInventoryHistory(const filesystem::path& path, vector<InventoryHistoryPoint>& history);
+bool saveInventoryHistory(const filesystem::path& path, const vector<InventoryHistoryPoint>& history);
+void appendInventoryHistory(vector<InventoryHistoryPoint>& history, const InventoryHistoryPoint& point,
+                            size_t maxEntries = 180);
 
 vector<InventoryItem> seedInventory();
 

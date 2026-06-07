@@ -924,41 +924,7 @@ void App::loadState() {
     activities_.push_back(makeActivity("system", "Inventory loaded"));
     activities_.push_back(makeActivity("system", "Terminal dashboard initialized"));
   }
-
-  const auto config = loadDigiKeyConfig();
-  if (config.valid()) {
-    setMessage("Loading DigiKey metadata...", 15);
-    render();
-
-    DigiKeyApiClient client(move(config));
-    size_t refreshedCount = 0;
-    size_t attemptedCount = 0;
-    for (auto& item : store_.items()) {
-      string lookup = !item.digikeyPartNumber.empty() ? item.digikeyPartNumber : item.sku;
-      if (lookup.empty() && !item.manufacturer.empty() && !item.partName.empty()) {
-        lookup = item.manufacturer + " " + item.partName;
-      }
-      if (lookup.empty()) {
-        lookup = item.partName;
-      }
-      if (trim(lookup).empty()) {
-        continue;
-      }
-
-      ++attemptedCount;
-      string error;
-      if (const auto details = client.fetchProductDetails(lookup, &error); details.has_value()) {
-        if (mergeDigiKeyMetadata(item, *details)) {
-          ++refreshedCount;
-        }
-      }
-    }
-
-    if (attemptedCount > 0) {
-      activities_.push_back(makeActivity("sync", "DigiKey metadata refreshed for " + to_string(refreshedCount) +
-                                                   " of " + to_string(attemptedCount) + " parts"));
-    }
-  }
+  // DigiKey metadata is fetched on demand during scan-driven workflows, not at startup.
 
   server_.setRecentActivity(activities_);
   saveState();

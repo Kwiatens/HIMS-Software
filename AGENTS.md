@@ -60,10 +60,22 @@ After each finished change, always:
 1. Build the software.
 2. Execute the software in a visible desktop window.
 3. Verify the change behaves as intended.
+4. If the change touches the TUI or any terminal rendering code, capture a screenshot of the terminal window itself and inspect it visually before finishing.
 
 If the change affects core inventory behavior, also run the test executable.
 
 If the app is already running and the linker cannot overwrite the executable, close the running instance first and then rebuild.
+
+## TUI Visual QA
+
+When you change terminal rendering, do not stop at a successful build.
+
+- Launch the app in a visible terminal window (CMD NOT Powershell!)
+- Capture only the terminal window, not the whole desktop.
+- Inspect the screenshot for alignment, spacing, clipping, wrapping, color contrast, row striping, and whether animated or scrolling sections look correct.
+- Compare the screenshot against the requested layout, not just against the code.
+- If the screenshot shows the wrong window, the wrong executable, or an old code path, fix that before concluding the task.
+- Record the visual result in your reasoning so later agents know the screen was checked, not assumed.
 
 ## Test Environment Notes
 
