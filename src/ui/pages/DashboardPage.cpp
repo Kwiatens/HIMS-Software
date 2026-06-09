@@ -10,7 +10,6 @@
 #include <cctype>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -41,11 +40,6 @@ struct DeviceStatus {
   string error;
 };
 
-struct CategoryBucket {
-  string name;
-  size_t count = 0;
-};
-
 struct DashboardSnapshot {
   size_t itemCount = 0;
   size_t totalQuantity = 0;
@@ -61,8 +55,6 @@ struct DashboardSnapshot {
   string lastScannedPart;
   float stockHealth = 1.0f;
   vector<AlertRow> stockWarnings;
-  vector<CategoryBucket> categories;
-  vector<InventoryHistoryPoint> history;
   vector<DeviceStatus> devices;
   vector<string> recentEvents;
 };
@@ -116,10 +108,6 @@ ftxui::Color statusColor(bool connected) {
 ftxui::Element statusChip(bool connected) {
   const auto bg = connected ? ftxui::Color::RGB(18, 44, 28) : ftxui::Color::RGB(56, 24, 24);
   return styledText(" " + statusLabel(connected) + " ", statusColor(connected), bg) | ftxui::bold;
-}
-
-ftxui::Element keyChip(const string& key, const string& action, ftxui::Color fg, ftxui::Color bg) {
-  return styledText("[" + key + "] " + action, fg, bg) | ftxui::bold;
 }
 
 ftxui::Color stripedRowBg(size_t index) {
@@ -239,36 +227,6 @@ ftxui::Element stockWarningSection(const string& title, const vector<AlertRow>& 
          ftxui::bgcolor(uiPanelLeftBg()) | ftxui::flex;
 }
 
-ftxui::Element categoryRow(const CategoryBucket& bucket, size_t maxCount, size_t visibleIndex, int nameWidth,
-                           int countWidth, int barWidth) {
-  const float ratio = maxCount == 0 ? 0.0f : static_cast<float>(bucket.count) / static_cast<float>(maxCount);
-  const auto bar = barString(ratio, barWidth);
-  return ftxui::hbox({
-             fixedCell(bucket.name, nameWidth, uiTitleColor()),
-             styledText(" | ", uiDimColor()),
-             fixedCell(to_string(bucket.count), countWidth, uiAccentColor(), true),
-             styledText(" | ", uiDimColor()),
-             fixedCell(bar, barWidth, uiInfoColor()),
-             ftxui::filler(),
-         }) |
-         ftxui::bgcolor(stripedRowBg(visibleIndex));
-}
-
-ftxui::Element historyRow(const InventoryHistoryPoint& point, size_t maxUnits) {
-  const float ratio = maxUnits == 0 ? 0.0f : static_cast<float>(point.totalUnits) / static_cast<float>(maxUnits);
-  const auto label = nowTimestampString(point.timestamp);
-  const auto counts = "units " + to_string(point.totalUnits) + "  low " + to_string(point.lowStockCount) +
-                      "  out " + to_string(point.outOfStockCount) + "  err " + to_string(point.dataErrorCount);
-  return ftxui::vbox({
-      ftxui::hbox({
-          styledText(label, uiMutedColor()),
-          ftxui::filler(),
-          styledText("[" + barString(ratio, 18) + "]", uiAccentColor()),
-      }),
-      styledText(counts, uiInfoColor()),
-  });
-}
-
 ftxui::Element deviceRow(const DeviceStatus& device) {
   ftxui::Elements body;
   body.push_back(ftxui::hbox({
@@ -297,11 +255,9 @@ vector<string> recentEventLines(const vector<ActivityEntry>& activities) {
 }
 
 DashboardSnapshot buildDashboardSnapshot(const vector<InventoryItem>& items, const vector<ActivityEntry>& activities,
-                                         const vector<InventoryHistoryPoint>& history, bool scannerRunning,
-                                         const string& scannerUrl) {
+                                         bool scannerRunning, const string& scannerUrl) {
   DashboardSnapshot snapshot;
   snapshot.itemCount = items.size();
-  snapshot.history = history;
   snapshot.recentEvents = recentEventLines(activities);
 
   unordered_set<string> categories;
@@ -363,28 +319,6 @@ DashboardSnapshot buildDashboardSnapshot(const vector<InventoryItem>& items, con
     }
   }
 
-  if (snapshot.history.empty()) {
-    snapshot.history.push_back(makeInventoryHistoryPoint(items));
-  }
-
-  snapshot.categories.reserve(categories.size());
-  unordered_map<string, size_t> bucketCounts;
-  for (const auto& item : items) {
-    const auto key = displayCategory(item.category);
-    if (!trim(key).empty()) {
-      ++bucketCounts[key];
-    }
-  }
-  for (const auto& [name, count] : bucketCounts) {
-    snapshot.categories.push_back({name, count});
-  }
-  sort(snapshot.categories.begin(), snapshot.categories.end(), [](const CategoryBucket& lhs, const CategoryBucket& rhs) {
-    if (lhs.count != rhs.count) {
-      return lhs.count > rhs.count;
-    }
-    return toLower(lhs.name) < toLower(rhs.name);
-  });
-
   snapshot.devices = {
       {"HIMS Scan", scannerRunning, scannerUrl,
        snapshot.lastScannedPart.empty() ? "Waiting for scans" : snapshot.lastScannedPart,
@@ -412,7 +346,7 @@ string timestampOrDash(time_t value) {
 }  // namespace
 
 ftxui::Element App::renderDashboardUi() const {
-  const auto snapshot = buildDashboardSnapshot(store_.items(), activities_, inventoryHistory_, server_.running(), scannerUrl());
+  const auto snapshot = buildDashboardSnapshot(store_.items(), activities_, server_.running(), scannerUrl());
   const auto* activeScreen = ftxui::ScreenInteractive::Active();
   const int screenWidth = activeScreen != nullptr ? activeScreen->dimx() : 120;
   const int screenHeight = activeScreen != nullptr ? activeScreen->dimy() : 40;
@@ -422,7 +356,6 @@ ftxui::Element App::renderDashboardUi() const {
                                            : clamp((screenWidth * 62) / 100, 78, screenWidth - 42);
   const int rightOuterWidth = stackedLayout ? max(48, screenWidth - 4) : max(34, screenWidth - leftOuterWidth - 1);
   const int leftInnerWidth = max(20, leftOuterWidth - 2);
-  const int rightInnerWidth = max(20, rightOuterWidth - 2);
 
   const auto overviewPanel = panel(
       "Inventory overview",
@@ -465,10 +398,6 @@ ftxui::Element App::renderDashboardUi() const {
                                                                           max(16, screenHeight - 10))));
   const size_t warningOffset = animatedOffset(snapshot.stockWarnings.empty() ? 1 : snapshot.stockWarnings.size(), 1000);
 
-  const int categoryNameWidth = clamp(rightInnerWidth / 5, 18, 28);
-  const int categoryCountWidth = 5;
-  const int categoryBarWidth = clamp(rightInnerWidth / 6, 14, 20);
-
   ftxui::Elements recentActivityRows;
   if (snapshot.recentEvents.empty()) {
     recentActivityRows.push_back(styledText("No activity yet.", uiMutedColor()));
@@ -486,55 +415,6 @@ ftxui::Element App::renderDashboardUi() const {
                                                       warningStatusWidth, warningPartWidth, warningQuantityWidth,
                                                       warningCategoryWidth, warningLocationWidth);
 
-  const size_t maxHistoryUnits = [&]() {
-    size_t maxUnits = 0;
-    for (const auto& point : snapshot.history) {
-      maxUnits = max(maxUnits, point.totalUnits);
-    }
-    return maxUnits;
-  }();
-
-  ftxui::Elements historyRows;
-  if (snapshot.history.empty()) {
-    historyRows.push_back(styledText("No history yet. A snapshot is saved when the inventory changes.", uiMutedColor()));
-  } else {
-    const auto visibleCount = min<size_t>(snapshot.history.size(), 5);
-    for (size_t offset = 0; offset < visibleCount; ++offset) {
-      const auto& point = snapshot.history[snapshot.history.size() - 1 - offset];
-      historyRows.push_back(historyRow(point, maxHistoryUnits));
-      if (offset + 1 < visibleCount) {
-        historyRows.push_back(ftxui::separator());
-      }
-    }
-  }
-  const auto historyPanel = panel("Inventory history", move(historyRows), uiInfoColor(), uiPanelRightBg()) |
-                            ftxui::bgcolor(uiPanelRightBg());
-
-  ftxui::Elements categoryRows;
-  if (snapshot.categories.empty()) {
-    categoryRows.push_back(styledText("No categories yet.", uiMutedColor()));
-  } else {
-    const auto visibleCount = min<size_t>(snapshot.categories.size(), 3);
-    const auto maxCount = snapshot.categories.front().count;
-    categoryRows.push_back(ftxui::hbox({
-        fixedCell("Category", categoryNameWidth, uiMutedColor()),
-        styledText(" | ", uiDimColor()),
-        fixedCell("Count", categoryCountWidth, uiMutedColor(), true),
-        styledText(" | ", uiDimColor()),
-        fixedCell("Share", categoryBarWidth, uiMutedColor()),
-        ftxui::filler(),
-    }) | ftxui::bgcolor(uiRowDarkBg()));
-    for (size_t index = 0; index < visibleCount; ++index) {
-      categoryRows.push_back(categoryRow(snapshot.categories[index], maxCount, index, categoryNameWidth,
-                                         categoryCountWidth, categoryBarWidth));
-      if (index + 1 < visibleCount) {
-        categoryRows.push_back(ftxui::separator());
-      }
-    }
-  }
-  const auto categoryPanel = panel("Parts by category", move(categoryRows), uiLabelColor(), uiPanelRightBg()) |
-                             ftxui::bgcolor(uiPanelRightBg());
-
   ftxui::Elements deviceRows;
   for (size_t index = 0; index < snapshot.devices.size(); ++index) {
     deviceRows.push_back(deviceRow(snapshot.devices[index]));
@@ -550,56 +430,12 @@ ftxui::Element App::renderDashboardUi() const {
       ftxui::separator(),
       recentEventsPanel,
       ftxui::separator(),
-      historyPanel,
-      ftxui::separator(),
       devicesPanel,
-      ftxui::separator(),
-      categoryPanel,
   }) | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, rightOuterWidth) | ftxui::flex;
 
   const auto leftColumn = ftxui::vbox({
       stockWarningsPanel | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, leftOuterWidth),
   }) | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, leftOuterWidth) | ftxui::flex;
-
-  ftxui::Elements shortcutRows;
-  if (stackedLayout) {
-    shortcutRows.push_back(ftxui::hbox({
-        keyChip("S", "Scan/Add stock", uiLinkColor(), ftxui::Color::RGB(18, 38, 52)),
-        ftxui::filler(),
-        keyChip("U", "Use/remove stock", uiWarnColor(), ftxui::Color::RGB(52, 38, 18)),
-        ftxui::filler(),
-        keyChip("F", "Find part", uiInfoColor(), ftxui::Color::RGB(18, 30, 48)),
-    }));
-    shortcutRows.push_back(ftxui::separator());
-    shortcutRows.push_back(ftxui::hbox({
-        keyChip("L", "Print label", uiLabelColor(), ftxui::Color::RGB(32, 26, 52)),
-        ftxui::filler(),
-        keyChip("R", "Refresh", uiSuccessColor(), ftxui::Color::RGB(18, 42, 28)),
-        ftxui::filler(),
-        keyChip("D", "Database", uiDangerColor(), ftxui::Color::RGB(50, 24, 28)),
-        ftxui::filler(),
-        keyChip("Q", "Quit", uiMutedColor(), ftxui::Color::RGB(32, 32, 32)),
-    }));
-  } else {
-    shortcutRows.push_back(ftxui::hbox({
-        keyChip("S", "Scan/Add stock", uiLinkColor(), ftxui::Color::RGB(18, 38, 52)),
-        ftxui::filler(),
-        keyChip("U", "Use/remove stock", uiWarnColor(), ftxui::Color::RGB(52, 38, 18)),
-        ftxui::filler(),
-        keyChip("F", "Find part", uiInfoColor(), ftxui::Color::RGB(18, 30, 48)),
-        ftxui::filler(),
-        keyChip("L", "Print label", uiLabelColor(), ftxui::Color::RGB(32, 26, 52)),
-        ftxui::filler(),
-        keyChip("R", "Refresh", uiSuccessColor(), ftxui::Color::RGB(18, 42, 28)),
-        ftxui::filler(),
-        keyChip("D", "Database", uiDangerColor(), ftxui::Color::RGB(50, 24, 28)),
-        ftxui::filler(),
-        keyChip("Q", "Quit", uiMutedColor(), ftxui::Color::RGB(32, 32, 32)),
-    }));
-  }
-
-  const auto shortcutsPanel = panel("Keyboard", move(shortcutRows), uiAccentColor(), uiPanelLeftBg()) |
-                              ftxui::bgcolor(uiPanelLeftBg());
 
   ftxui::Element content;
   if (stackedLayout) {
@@ -610,13 +446,7 @@ ftxui::Element App::renderDashboardUi() const {
         ftxui::separator(),
         recentEventsPanel,
         ftxui::separator(),
-        historyPanel,
-        ftxui::separator(),
         devicesPanel,
-        ftxui::separator(),
-        categoryPanel,
-        ftxui::separator(),
-        shortcutsPanel,
     });
   } else {
     content = ftxui::vbox({
@@ -625,8 +455,6 @@ ftxui::Element App::renderDashboardUi() const {
             ftxui::separator(),
             rightColumn,
         }),
-        ftxui::separator(),
-        shortcutsPanel,
     });
   }
 

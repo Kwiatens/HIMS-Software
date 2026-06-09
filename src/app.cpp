@@ -219,7 +219,13 @@ KeyEvent translateEvent(const ftxui::Event& event) {
   if (event == ftxui::Event::Escape) {
     return {KeyType::Escape, '\0'};
   }
+  if (event == ftxui::Event::CtrlH) {
+    return {KeyType::CtrlBackspace, '\0'};
+  }
   if (event == ftxui::Event::Backspace) {
+    if (controlModifierPressed()) {
+      return {KeyType::CtrlBackspace, '\0'};
+    }
     return {KeyType::Backspace, '\0'};
   }
   if (event == ftxui::Event::Tab) {
@@ -1213,8 +1219,12 @@ ftxui::Element App::renderSearchBarUi() const {
 }
 
 ftxui::Element App::renderStatusBarUi() const {
-  return fullLine(scannerUrl() + "  Dashboard: Tab/1  Stock: arrows/jk  Detail: Enter  Edit: e  New: n  Scanner: s  Quit: q",
-                  uiLinkColor(), uiPanelRightBg());
+  return ftxui::hbox({
+             styledText(scannerUrl(), uiLinkColor()),
+             ftxui::filler(),
+             styledText(shortcutSummary(), uiDimColor()),
+         }) |
+         ftxui::bgcolor(uiPanelRightBg());
 }
 
 ftxui::Element App::renderMessageUi() const {
@@ -1233,6 +1243,7 @@ int App::run() {
     if (event == ftxui::Event::Custom) {
       processScans();
       clearMessageIfExpired();
+      clearDeleteConfirmationIfExpired();
       return true;
     }
 
@@ -2029,7 +2040,7 @@ void App::renderSearchBar(ostringstream& out, const ConsoleSize&) {
 void App::renderStatusBar(ostringstream& out, const ConsoleSize& size) {
   out << string(size.columns, '-') << '\n';
   out << kColorLink << scannerUrl() << kColorReset << "  ";
-  out << kColorDim << "Dashboard: Tab/1  Stock: arrows/jk  Detail: Enter  Edit: e  New: n  Scanner: s  Quit: q" << kColorReset << '\n';
+  out << kColorDim << shortcutSummary() << kColorReset << '\n';
 }
 
 void App::renderMessage(ostringstream& out, const ConsoleSize&) {
@@ -2113,9 +2124,83 @@ void App::moveSelection(int delta) {
   dirty_ = true;
 }
 
+bool App::deleteConfirmationActive() const {
+  return !deleteConfirmationItemId_.empty();
+}
+
+bool App::deleteConfirmationReady() const {
+  return deleteConfirmationActive() && time(nullptr) >= deleteConfirmationUntil_;
+}
+
+int App::deleteConfirmationSecondsLeft() const {
+  if (!deleteConfirmationActive()) {
+    return 0;
+  }
+  return max(0, static_cast<int>(deleteConfirmationUntil_ - time(nullptr)));
+}
+
+void App::armDeleteConfirmation() {
+  const auto* item = selectedItem();
+  if (item == nullptr) {
+    setMessage("No item selected", 2);
+    return;
+  }
+
+  deleteConfirmationItemId_ = item->id;
+  deleteConfirmationUntil_ = time(nullptr) + 3;
+  dirty_ = true;
+}
+
+void App::cancelDeleteConfirmation() {
+  if (deleteConfirmationItemId_.empty()) {
+    return;
+  }
+
+  deleteConfirmationItemId_.clear();
+  deleteConfirmationUntil_ = 0;
+  dirty_ = true;
+}
+
+void App::clearDeleteConfirmationIfExpired() {
+  // Keep the confirmation popup visible after the countdown reaches zero.
+}
+
+void App::confirmDeleteSelectedItem() {
+  if (!deleteConfirmationActive()) {
+    setMessage("Press Ctrl+Backspace first to arm delete", 2);
+    return;
+  }
+
+  if (!deleteConfirmationReady()) {
+    setMessage("Wait " + to_string(deleteConfirmationSecondsLeft()) + " more second" +
+                   (deleteConfirmationSecondsLeft() == 1 ? string() : string("s")) + " to confirm delete",
+               2);
+    return;
+  }
+
+  const auto it = find_if(store_.items().begin(), store_.items().end(), [&](const InventoryItem& item) {
+    return item.id == deleteConfirmationItemId_;
+  });
+  if (it == store_.items().end()) {
+    cancelDeleteConfirmation();
+    setMessage("Item no longer available", 2);
+    return;
+  }
+
+  const auto itemName = it->partName;
+  store_.items().erase(it);
+  cancelDeleteConfirmation();
+  logActivity("delete", itemName + " deleted");
+  saveState();
+  syncSelectionToFilter();
+  page_ = Page::Stock;
+  setMessage(itemName + " deleted", 2);
+}
+
 void App::changePage(Page page) {
   page_ = page;
   inputMode_ = InputMode::None;
+  cancelDeleteConfirmation();
   dirty_ = true;
 }
 
@@ -2473,6 +2558,29 @@ string App::activePrompt() const {
     return fieldLabel(menuOptions_[fieldMenuIndex_].field) + ": ";
   }
   return "";
+}
+
+string App::shortcutSummary() const {
+  if (inputMode_ == InputMode::Search) {
+    return "Search: 'Enter' apply | 'Esc' cancel";
+  }
+  if (inputMode_ == InputMode::EditFieldMenu) {
+    return "Edit fields: '1'-'0' choose | 'Esc' cancel";
+  }
+  if (inputMode_ == InputMode::EditValue) {
+    return "Edit value: 'Enter' save | 'Esc' cancel";
+  }
+
+  switch (page_) {
+    case Page::Dashboard:
+      return "Dashboard: 'Tab'/'1' stock | '2' scanner | '3' add | '4' reload | '/' search | 'q' quit";
+    case Page::Stock:
+      return "Stock: 'Tab'/'1' dashboard | 'Enter' detail | 'e' edit | 'n' new | 'Ctrl+Backspace' delete | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+    case Page::Detail:
+      return "Detail: 'Esc' stock | 'e' edit | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+  }
+
+  return {};
 }
 
 }  // namespace hims

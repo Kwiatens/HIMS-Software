@@ -106,6 +106,13 @@ class App {
   void syncSelectionToFilter();
   void moveSelection(int delta);
   void changePage(Page page);
+  void armDeleteConfirmation();
+  void cancelDeleteConfirmation();
+  void clearDeleteConfirmationIfExpired();
+  void confirmDeleteSelectedItem();
+  bool deleteConfirmationActive() const;
+  bool deleteConfirmationReady() const;
+  int deleteConfirmationSecondsLeft() const;
   void openSelectedDetail();
   void startSearch();
   void cancelInput();
@@ -125,6 +132,7 @@ class App {
   string summaryLine() const;
   string scannerUrl() const;
   string activePrompt() const;
+  string shortcutSummary() const;
 
   InventoryStore store_;
   vector<ActivityEntry> activities_;
@@ -151,6 +159,8 @@ class App {
   WorkingCopy workingCopy_;
   int fieldMenuIndex_ = 0;
   vector<FieldOption> menuOptions_;
+  string deleteConfirmationItemId_;
+  time_t deleteConfirmationUntil_ = 0;
 };
 
 }  // namespace hims

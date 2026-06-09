@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -110,14 +111,80 @@ ftxui::Element App::renderStockUi() const {
   auto detailPanel = panel("Detail", move(detailRows), uiAccentColor()) | ftxui::bgcolor(uiPanelRightBg()) |
                      ftxui::size(ftxui::WIDTH, ftxui::EQUAL, detailOuterWidth);
 
-  return ftxui::hbox({
+  auto page = ftxui::hbox({
       listPanel,
       ftxui::separator() | ftxui::color(uiDimColor()),
       detailPanel,
   });
+
+  if (!deleteConfirmationActive()) {
+    return page;
+  }
+
+  const auto* item = store_.findById(deleteConfirmationItemId_);
+  const auto itemLabel = item == nullptr ? string("this part") : item->partName;
+  const auto secondsLeft = deleteConfirmationSecondsLeft();
+  const int popupWidth = max(48, min(screenWidth - 12, 72));
+
+  ftxui::Elements popupRows;
+  popupRows.push_back(ftxui::paragraphAlignLeft("Are you sure you want to delete this part from the database?") |
+                      ftxui::color(uiTitleColor()));
+  popupRows.push_back(ftxui::separator());
+  popupRows.push_back(ftxui::paragraphAlignLeft("Selected: " + itemLabel) | ftxui::color(uiWarnColor()));
+  popupRows.push_back(ftxui::paragraphAlignLeft("Press Enter to confirm after the timer unlocks.") |
+                      ftxui::color(secondsLeft == 0 ? uiTitleColor() : uiMutedColor()));
+  popupRows.push_back(ftxui::paragraphAlignLeft("Press Esc to cancel.") | ftxui::color(uiMutedColor()));
+  popupRows.push_back(ftxui::paragraphAlignLeft(to_string(secondsLeft) + " second" +
+                                                (secondsLeft == 1 ? string() : string("s")) + " remaining") |
+                      ftxui::color(uiWarnColor()));
+
+  auto popup = ftxui::window(styledText("Delete item", uiDangerColor()),
+                             ftxui::vbox(move(popupRows)) | ftxui::bgcolor(uiPanelRightBg()) |
+                                 ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, popupWidth)) |
+               ftxui::color(uiDangerColor());
+
+  auto overlay = ftxui::vbox({
+      ftxui::filler(),
+      ftxui::hbox({
+          ftxui::filler(),
+          popup,
+          ftxui::filler(),
+      }),
+      ftxui::filler(),
+  });
+
+  return ftxui::dbox({
+      page,
+      overlay,
+  });
 }
 
 void App::handleStockKey(const KeyEvent& key) {
+  if (deleteConfirmationActive()) {
+    if (key.type == KeyType::Enter) {
+      confirmDeleteSelectedItem();
+      return;
+    }
+    if (key.type == KeyType::Escape) {
+      cancelDeleteConfirmation();
+      return;
+    }
+
+    cancelDeleteConfirmation();
+  } else if (key.type == KeyType::Backspace) {
+    return;
+  }
+
+  if (key.type == KeyType::CtrlBackspace) {
+    armDeleteConfirmation();
+    return;
+  }
+
+  if (key.type == KeyType::Tab) {
+    changePage(Page::Dashboard);
+    return;
+  }
+
   if (key.type == KeyType::Character) {
     const auto ch = tolower(static_cast<unsigned char>(key.ch));
     switch (ch) {
@@ -173,9 +240,6 @@ void App::handleStockKey(const KeyEvent& key) {
       case 's':
         openUrl(scannerUrl());
         setMessage("Opened scanner page in the default browser", 3);
-        break;
-      case '\t':
-        changePage(Page::Dashboard);
         break;
       default:
         break;

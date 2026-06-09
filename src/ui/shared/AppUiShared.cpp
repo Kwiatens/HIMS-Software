@@ -15,19 +15,19 @@ namespace hims {
 using namespace std;
 
 ftxui::Color uiTitleColor() {
-  return ftxui::Color::RGB(102, 204, 255);
+  return ftxui::Color::RGB(98, 200, 255);
 }
 
 ftxui::Color uiAccentColor() {
-  return ftxui::Color::RGB(80, 220, 170);
+  return ftxui::Color::RGB(98, 200, 255);
 }
 
 ftxui::Color uiInfoColor() {
-  return ftxui::Color::RGB(120, 180, 255);
+  return ftxui::Color::RGB(98, 200, 255);
 }
 
 ftxui::Color uiSuccessColor() {
-  return ftxui::Color::RGB(115, 220, 140);
+  return ftxui::Color::RGB(98, 200, 255);
 }
 
 ftxui::Color uiLinkColor() {
@@ -35,7 +35,7 @@ ftxui::Color uiLinkColor() {
 }
 
 ftxui::Color uiLabelColor() {
-  return ftxui::Color::RGB(170, 160, 255);
+  return ftxui::Color::RGB(98, 200, 255);
 }
 
 ftxui::Color uiWarnColor() {
@@ -51,7 +51,7 @@ ftxui::Color uiMutedColor() {
 }
 
 ftxui::Color uiDimColor() {
-  return ftxui::Color::RGB(120, 120, 120);
+  return ftxui::Color::RGB(128, 128, 128);
 }
 
 ftxui::Color uiPanelLeftBg() {
@@ -59,7 +59,7 @@ ftxui::Color uiPanelLeftBg() {
 }
 
 ftxui::Color uiPanelRightBg() {
-  return ftxui::Color::RGB(30, 30, 30);
+  return ftxui::Color::RGB(24, 24, 24);
 }
 
 ftxui::Color uiRowDarkBg() {
@@ -67,11 +67,11 @@ ftxui::Color uiRowDarkBg() {
 }
 
 ftxui::Color uiRowLightBg() {
-  return ftxui::Color::RGB(42, 42, 42);
+  return ftxui::Color::RGB(30, 30, 30);
 }
 
 ftxui::Color uiRowSelectedBg() {
-  return ftxui::Color::RGB(25, 70, 110);
+  return ftxui::Color::RGB(30, 60, 82);
 }
 
 string padRight(string value, int width) {

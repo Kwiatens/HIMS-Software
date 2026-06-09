@@ -96,6 +96,15 @@ string ipv4ToString(const sockaddr_in& address) {
 
 }  // namespace
 
+bool controlModifierPressed() {
+  return (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
+         (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0 ||
+         (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0 ||
+         (GetKeyState(VK_CONTROL) & 0x8000) != 0 ||
+         (GetKeyState(VK_LCONTROL) & 0x8000) != 0 ||
+         (GetKeyState(VK_RCONTROL) & 0x8000) != 0;
+}
+
 ConsoleSession::ConsoleSession() {
   const bool vtEnabled = ensureVirtualTerminal();
   if (vtEnabled) {
@@ -224,7 +233,7 @@ vector<KeyEvent> pollKeys() {
         keys.push_back({KeyType::Escape, '\0'});
         break;
       case 8:
-        keys.push_back({KeyType::Backspace, '\0'});
+        keys.push_back({controlModifierPressed() ? KeyType::CtrlBackspace : KeyType::Backspace, '\0'});
         break;
       case 9:
         keys.push_back({KeyType::Tab, '\0'});

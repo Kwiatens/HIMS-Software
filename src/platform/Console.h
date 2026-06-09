@@ -17,6 +17,7 @@ enum class KeyType {
   Enter,
   Escape,
   Backspace,
+  CtrlBackspace,
   Tab,
   Up,
   Down,
@@ -57,6 +58,7 @@ void showCursor();
 void setConsoleTitle(const string& title);
 bool openUrl(const string& url);
 vector<string> localAddresses();
+bool controlModifierPressed();
 vector<KeyEvent> pollKeys();
 
 }  // namespace hims
