@@ -4,6 +4,7 @@
 #pragma once
 
 #include "core/Inventory.h"
+#include "import/DigiKeyCsvImport.h"
 #include "platform/Console.h"
 #include "platform/HttpServer.h"
 
@@ -29,6 +30,7 @@ class App {
     Dashboard,
     Stock,
     Detail,
+    ImportCsv,
   };
 
   enum class InputMode {
@@ -73,6 +75,7 @@ class App {
   void handleDashboardKey(const KeyEvent& key);
   void handleStockKey(const KeyEvent& key);
   void handleDetailKey(const KeyEvent& key);
+  void handleImportCsvKey(const KeyEvent& key);
   void handleSearchKey(const KeyEvent& key);
   void handleEditMenuKey(const KeyEvent& key);
   void handleEditValueKey(const KeyEvent& key);
@@ -81,6 +84,7 @@ class App {
   void renderDashboard(ostringstream& out, const ConsoleSize& size);
   void renderStock(ostringstream& out, const ConsoleSize& size);
   void renderDetail(ostringstream& out, const ConsoleSize& size);
+  void renderImportCsv(ostringstream& out, const ConsoleSize& size);
   void renderSearchBar(ostringstream& out, const ConsoleSize& size);
   void renderStatusBar(ostringstream& out, const ConsoleSize& size);
   void renderMessage(ostringstream& out, const ConsoleSize& size);
@@ -89,6 +93,7 @@ class App {
   ftxui::Element renderDashboardUi() const;
   ftxui::Element renderStockUi() const;
   ftxui::Element renderDetailUi() const;
+  ftxui::Element renderImportCsvUi() const;
   ftxui::Element renderSearchBarUi() const;
   ftxui::Element renderStatusBarUi() const;
   ftxui::Element renderMessageUi() const;
@@ -117,6 +122,7 @@ class App {
   void startSearch();
   void cancelInput();
   void beginEditCurrentItem(bool createNew);
+  void beginEditImportCandidate();
   void openFieldMenu();
   void commitEditField(EditField field, const string& value);
   void saveWorkingCopy();
@@ -124,6 +130,16 @@ class App {
   void logActivity(const string& kind, const string& message);
   void pushScanCode(const string& code);
   void processScans();
+  void beginCsvImport();
+  void moveImportSelection(int delta);
+  void acceptImportCandidate();
+  void skipImportCandidate();
+  void finishImportReview();
+  void finishCsvImport(bool syncWithDigiKey);
+  void syncAcceptedImports();
+  CsvImportCandidate* currentImportCandidate();
+  const CsvImportCandidate* currentImportCandidate() const;
+  string importCompletionMessage() const;
   void openCurrentUrl(const string& url, const string& label);
   string fieldLabel(EditField field) const;
   string currentFieldValue(EditField field) const;
@@ -151,12 +167,24 @@ class App {
   size_t stockScroll_ = 0;
   size_t detailScroll_ = 0;
   vector<string> scanQueue_;
+  vector<CsvImportCandidate> importCandidates_;
+  vector<string> importAcceptedItemIds_;
+  filesystem::path importSourcePath_;
   vector<InventoryHistoryPoint> inventoryHistory_;
   mutex scanMutex_;
   bool running_ = true;
   bool dirty_ = true;
   ConsoleSize lastDrawSize_{};
   WorkingCopy workingCopy_;
+  bool editingImportCandidate_ = false;
+  size_t importEditIndex_ = 0;
+  size_t importSelection_ = 0;
+  bool importSyncPrompt_ = false;
+  int importCreatedCount_ = 0;
+  int importMergedCount_ = 0;
+  int importSkippedCount_ = 0;
+  int importSyncedCount_ = 0;
+  int importSyncFailedCount_ = 0;
   int fieldMenuIndex_ = 0;
   vector<FieldOption> menuOptions_;
   string deleteConfirmationItemId_;

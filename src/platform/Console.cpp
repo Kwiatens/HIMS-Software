@@ -15,6 +15,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <commdlg.h>
 #include <shellapi.h>
 
 #pragma comment(lib, "Ws2_32.lib")
@@ -172,6 +173,26 @@ void setConsoleTitle(const string& title) {
 bool openUrl(const string& url) {
   const auto result = reinterpret_cast<intptr_t>(ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
   return result > 32;
+}
+
+bool openCsvFileDialog(filesystem::path& selectedPath) {
+  char fileName[MAX_PATH] = {};
+  OPENFILENAMEA dialog{};
+  dialog.lStructSize = sizeof(dialog);
+  dialog.hwndOwner = nullptr;
+  dialog.lpstrFilter = "CSV files (*.csv)\0*.csv\0All files (*.*)\0*.*\0";
+  dialog.lpstrFile = fileName;
+  dialog.nMaxFile = MAX_PATH;
+  dialog.lpstrTitle = "Select DigiKey order CSV";
+  dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+  dialog.lpstrDefExt = "csv";
+
+  if (GetOpenFileNameA(&dialog) == 0) {
+    return false;
+  }
+
+  selectedPath = filesystem::path(fileName);
+  return true;
 }
 
 vector<string> localAddresses() {

@@ -58,7 +58,7 @@ Tests:
 After each finished change, always:
 
 1. Build the software.
-2. Execute the software in a visible desktop window.
+2. Execute the software in an agent-owned verification session, not a user-owned or already-running window.
 3. Verify the change behaves as intended.
 4. If the change touches the TUI or any terminal rendering code, capture a screenshot of the terminal window itself and inspect it visually before finishing.
 
@@ -66,15 +66,28 @@ If the change affects core inventory behavior, also run the test executable.
 
 If the app is already running and the linker cannot overwrite the executable, close the running instance first and then rebuild.
 
+## Agent-Owned Verification Sessions
+
+Do not rely on a HIMS window that the user already has open. Agents may not reliably see minimized, background, or user-focused programs, and using the user's live window can mix verification with the user's own work.
+
+For verification, always launch a fresh HIMS instance that belongs to the agent:
+
+- Prefer an isolated runtime environment when possible, using a temporary `USERPROFILE` so test data goes under that temp profile's `Documents/HIMS` instead of the user's real inventory.
+- If a visible window is required for screenshot QA, launch a dedicated CMD window for the agent-owned instance, bring only that window to the foreground for capture, and close it when verification is complete.
+- Do not inspect, drive, or capture a user-owned HIMS window unless the user explicitly asks you to use that exact window.
+- If a user-owned or stale HIMS instance locks `build\Debug\hims.exe`, close only the HIMS verification process you started when possible. Ask before closing anything that may belong to the user.
+- Record whether verification used isolated temp data or the real `Documents/HIMS` data.
+
 ## TUI Visual QA
 
 When you change terminal rendering, do not stop at a successful build.
 
-- Launch the app in a visible terminal window (CMD NOT Powershell!)
+- Launch the app in an agent-owned terminal window (CMD NOT Powershell!). Prefer isolated temp data unless the test explicitly needs the user's real inventory.
 - Capture only the terminal window, not the whole desktop.
 - Inspect the screenshot for alignment, spacing, clipping, wrapping, color contrast, row striping, and whether animated or scrolling sections look correct.
 - Compare the screenshot against the requested layout, not just against the code.
 - If the screenshot shows the wrong window, the wrong executable, or an old code path, fix that before concluding the task.
+- If the screenshot shows the dashboard when you expected another page, assume the automation missed the target window or dialog; refocus the agent-owned window and retry before concluding.
 - Record the visual result in your reasoning so later agents know the screen was checked, not assumed.
 
 ## Test Environment Notes

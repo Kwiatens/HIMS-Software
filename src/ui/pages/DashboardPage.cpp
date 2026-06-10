@@ -487,6 +487,10 @@ void App::handleDashboardKey(const KeyEvent& key) {
         saveInventoryHistory(inventoryPath_, inventoryHistory_);
         setMessage("Inventory reloaded from the database", 2);
         break;
+      case '5':
+      case 'i':
+        beginCsvImport();
+        break;
       case 'u':
         changePage(Page::Stock);
         setMessage("Use/remove stock from the stock browser with +/-", 3);
@@ -539,6 +543,7 @@ void App::renderDashboard(ostringstream& out, const ConsoleSize& size) {
   leftLines.push_back("  Missing metadata: " + to_string(summary.missingMetadataCount));
   leftLines.push_back("  Unsynced: " + to_string(summary.unsyncedCount));
   leftLines.push_back("  Database history stored in inventory.db");
+  leftLines.push_back("  Import CSV: 5 or i");
 
   vector<string> rightLines;
   rightLines.push_back("Recent activity");

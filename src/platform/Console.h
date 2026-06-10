@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,7 @@ void hideCursor();
 void showCursor();
 void setConsoleTitle(const string& title);
 bool openUrl(const string& url);
+bool openCsvFileDialog(filesystem::path& selectedPath);
 vector<string> localAddresses();
 bool controlModifierPressed();
 vector<KeyEvent> pollKeys();

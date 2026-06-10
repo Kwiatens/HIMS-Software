@@ -26,10 +26,12 @@ endif()
 add_executable(hims
   src/main.cpp
   src/app.cpp
+  src/import/DigiKeyCsvImport.cpp
   src/ui/shared/AppUiShared.cpp
   src/ui/pages/DashboardPage.cpp
   src/ui/pages/StockPage.cpp
   src/ui/pages/DetailPage.cpp
+  src/ui/pages/ImportCsvPage.cpp
   src/core/Inventory.cpp
   src/platform/HttpServer.cpp
   src/platform/DigiKeyApi.cpp
@@ -39,7 +41,7 @@ add_executable(hims
 target_include_directories(hims PRIVATE src)
 
 if(WIN32)
-  target_link_libraries(hims PRIVATE ws2_32 shell32 winhttp)
+  target_link_libraries(hims PRIVATE ws2_32 shell32 winhttp comdlg32)
 endif()
 
 target_link_libraries(hims PRIVATE ftxui::screen ftxui::dom ftxui::component)
@@ -52,6 +54,7 @@ add_custom_command(TARGET hims POST_BUILD
 
 add_executable(hims_tests
   tests/hims_tests.cpp
+  src/import/DigiKeyCsvImport.cpp
   src/core/Inventory.cpp
 )
 

@@ -20,6 +20,7 @@
 #include <optional>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <thread>
 
@@ -961,6 +962,8 @@ ftxui::Element App::renderPageUi() const {
       return renderStockUi();
     case Page::Detail:
       return renderDetailUi();
+    case Page::ImportCsv:
+      return renderImportCsvUi();
   }
 
   return ftxui::text("");
@@ -1248,14 +1251,14 @@ int App::run() {
     }
 
     if (event.is_mouse()) {
-      if (page_ == Page::Stock) {
+      if (page_ == Page::Stock || page_ == Page::ImportCsv) {
         const auto& mouse = event.mouse();
         if (mouse.button == ftxui::Mouse::WheelUp) {
-          moveSelection(-1);
+          page_ == Page::ImportCsv ? moveImportSelection(-1) : moveSelection(-1);
           return true;
         }
         if (mouse.button == ftxui::Mouse::WheelDown) {
-          moveSelection(1);
+          page_ == Page::ImportCsv ? moveImportSelection(1) : moveSelection(1);
           return true;
         }
       }
@@ -1321,6 +1324,9 @@ void App::handleKey(const KeyEvent& key) {
       break;
     case Page::Detail:
       handleDetailKey(key);
+      break;
+    case Page::ImportCsv:
+      handleImportCsvKey(key);
       break;
   }
 }
@@ -1634,6 +1640,9 @@ void App::render() {
       break;
     case Page::Detail:
       renderDetail(out, size);
+      break;
+    case Page::ImportCsv:
+      renderImportCsv(out, size);
       break;
   }
 
@@ -2225,6 +2234,7 @@ void App::cancelInput() {
 }
 
 void App::beginEditCurrentItem(bool createNew) {
+  editingImportCandidate_ = false;
   page_ = Page::Stock;
   workingCopy_ = {};
   if (createNew) {
@@ -2252,6 +2262,25 @@ void App::beginEditCurrentItem(bool createNew) {
   fieldMenuIndex_ = 0;
   inputMode_ = InputMode::EditFieldMenu;
   setMessage("Choose a field to edit", 3);
+}
+
+void App::beginEditImportCandidate() {
+  auto* candidate = currentImportCandidate();
+  if (candidate == nullptr) {
+    setMessage("No import row selected", 2);
+    return;
+  }
+
+  editingImportCandidate_ = true;
+  importEditIndex_ = importSelection_;
+  workingCopy_ = {};
+  workingCopy_.item = candidate->item;
+  workingCopy_.originalIndex = importSelection_;
+  menuOptions_ = fieldOptions();
+  fieldMenuIndex_ = 0;
+  inputMode_ = InputMode::EditFieldMenu;
+  page_ = Page::ImportCsv;
+  setMessage("Choose a field to edit for this import row", 3);
 }
 
 void App::openFieldMenu() {
@@ -2330,6 +2359,19 @@ void App::commitEditField(EditField field, const string& value) {
 }
 
 void App::saveWorkingCopy() {
+  if (editingImportCandidate_) {
+    if (importEditIndex_ < importCandidates_.size()) {
+      importCandidates_[importEditIndex_].item = workingCopy_.item;
+    }
+
+    editingImportCandidate_ = false;
+    inputMode_ = InputMode::None;
+    page_ = Page::ImportCsv;
+    setMessage("Import row updated", 2);
+    dirty_ = true;
+    return;
+  }
+
   if (workingCopy_.isNew) {
     store_.items().push_back(workingCopy_.item);
     selectedPosition_ = store_.items().empty() ? 0 : store_.items().size() - 1;
@@ -2405,6 +2447,193 @@ void App::processScans() {
     }
     syncSelectionToFilter();
   }
+}
+
+void App::beginCsvImport() {
+  filesystem::path selectedPath;
+  if (!openCsvFileDialog(selectedPath)) {
+    setMessage("CSV import cancelled", 2);
+    return;
+  }
+
+  const auto result = loadDigiKeyCsvFile(selectedPath, store_.items());
+  if (!result.ok) {
+    setMessage("CSV import failed: " + result.error, 6);
+    return;
+  }
+
+  importCandidates_ = result.candidates;
+  importAcceptedItemIds_.clear();
+  importSourcePath_ = selectedPath;
+  importSelection_ = 0;
+  importSyncPrompt_ = false;
+  importCreatedCount_ = 0;
+  importMergedCount_ = 0;
+  importSkippedCount_ = 0;
+  importSyncedCount_ = 0;
+  importSyncFailedCount_ = 0;
+  editingImportCandidate_ = false;
+  inputMode_ = InputMode::None;
+  page_ = Page::ImportCsv;
+
+  setMessage("Loaded " + to_string(importCandidates_.size()) + " CSV rows for review", 4);
+}
+
+CsvImportCandidate* App::currentImportCandidate() {
+  if (importCandidates_.empty()) {
+    return nullptr;
+  }
+  importSelection_ = min(importSelection_, importCandidates_.size() - 1);
+  return &importCandidates_[importSelection_];
+}
+
+const CsvImportCandidate* App::currentImportCandidate() const {
+  if (importCandidates_.empty()) {
+    return nullptr;
+  }
+  const auto index = min(importSelection_, importCandidates_.size() - 1);
+  return &importCandidates_[index];
+}
+
+void App::moveImportSelection(int delta) {
+  if (importCandidates_.empty()) {
+    importSelection_ = 0;
+    dirty_ = true;
+    return;
+  }
+
+  const auto current = static_cast<int>(min(importSelection_, importCandidates_.size() - 1));
+  importSelection_ = static_cast<size_t>(clamp(current + delta, 0, static_cast<int>(importCandidates_.size() - 1)));
+  dirty_ = true;
+}
+
+void App::acceptImportCandidate() {
+  auto* candidate = currentImportCandidate();
+  if (candidate == nullptr) {
+    finishImportReview();
+    return;
+  }
+
+  string acceptedId;
+  if (candidate->hasConflict) {
+    auto* existing = store_.findById(candidate->existingItemId);
+    if (existing != nullptr) {
+      existing->quantity = max(0, existing->quantity + candidate->item.quantity);
+      existing->lastUpdated = time(nullptr);
+      mergeImportedMetadata(*existing, candidate->item);
+      acceptedId = existing->id;
+      ++importMergedCount_;
+    }
+  }
+
+  if (acceptedId.empty()) {
+    store_.items().push_back(candidate->item);
+    acceptedId = store_.items().back().id;
+    ++importCreatedCount_;
+  }
+
+  importAcceptedItemIds_.push_back(acceptedId);
+  importCandidates_.erase(importCandidates_.begin() + static_cast<ptrdiff_t>(importSelection_));
+  if (importSelection_ >= importCandidates_.size() && !importCandidates_.empty()) {
+    importSelection_ = importCandidates_.size() - 1;
+  }
+
+  saveState();
+  if (importCandidates_.empty()) {
+    finishImportReview();
+  } else {
+    setMessage("Accepted import row", 2);
+  }
+  dirty_ = true;
+}
+
+void App::skipImportCandidate() {
+  if (importCandidates_.empty()) {
+    finishImportReview();
+    return;
+  }
+
+  importCandidates_.erase(importCandidates_.begin() + static_cast<ptrdiff_t>(importSelection_));
+  ++importSkippedCount_;
+  if (importSelection_ >= importCandidates_.size() && !importCandidates_.empty()) {
+    importSelection_ = importCandidates_.size() - 1;
+  }
+
+  if (importCandidates_.empty()) {
+    finishImportReview();
+  } else {
+    setMessage("Skipped import row", 2);
+  }
+  dirty_ = true;
+}
+
+void App::finishImportReview() {
+  importSyncPrompt_ = true;
+  inputMode_ = InputMode::None;
+  page_ = Page::ImportCsv;
+  setMessage("Sync accepted parts with DigiKey API? Highly recommended.", 8);
+}
+
+void App::syncAcceptedImports() {
+  const auto config = loadDigiKeyConfig();
+  unordered_set<string> uniqueIds(importAcceptedItemIds_.begin(), importAcceptedItemIds_.end());
+  if (!config.valid()) {
+    importSyncFailedCount_ += static_cast<int>(uniqueIds.size());
+    return;
+  }
+
+  DigiKeyApiClient client(config);
+  for (const auto& id : uniqueIds) {
+    auto* item = store_.findById(id);
+    if (item == nullptr) {
+      continue;
+    }
+
+    auto lookup = trim(item->digikeyPartNumber);
+    if (lookup.empty()) {
+      lookup = trim(item->sku);
+    }
+    if (lookup.empty()) {
+      ++importSyncFailedCount_;
+      continue;
+    }
+
+    string error;
+    auto details = client.fetchProductDetails(lookup, &error);
+    if (!details) {
+      ++importSyncFailedCount_;
+      continue;
+    }
+
+    mergeDigiKeyMetadata(*item, *details);
+    ++importSyncedCount_;
+  }
+
+  saveState();
+}
+
+void App::finishCsvImport(bool syncWithDigiKey) {
+  if (syncWithDigiKey) {
+    setMessage("Syncing accepted CSV rows with DigiKey API...", 3);
+    syncAcceptedImports();
+  }
+
+  const auto summary = importCompletionMessage();
+  logActivity("import", summary);
+  importCandidates_.clear();
+  importAcceptedItemIds_.clear();
+  importSourcePath_.clear();
+  importSelection_ = 0;
+  importSyncPrompt_ = false;
+  editingImportCandidate_ = false;
+  changePage(Page::Dashboard);
+  setMessage(summary, 8);
+}
+
+string App::importCompletionMessage() const {
+  return "CSV import complete: " + to_string(importCreatedCount_) + " new, " +
+         to_string(importMergedCount_) + " merged, " + to_string(importSkippedCount_) + " skipped, " +
+         to_string(importSyncedCount_) + " synced, " + to_string(importSyncFailedCount_) + " sync failed";
 }
 
 void App::openCurrentUrl(const string& url, const string& label) {
@@ -2573,11 +2802,16 @@ string App::shortcutSummary() const {
 
   switch (page_) {
     case Page::Dashboard:
-      return "Dashboard: 'Tab'/'1' stock | '2' scanner | '3' add | '4' reload | '/' search | 'q' quit";
+      return "Dashboard: 'Tab'/'1' stock | '2' scanner | '3' add | '4' reload | '5/i' import CSV | '/' search | 'q' quit";
     case Page::Stock:
       return "Stock: 'Tab'/'1' dashboard | 'Enter' detail | 'e' edit | 'n' new | 'Ctrl+Backspace' delete | '+/-' qty | '/' search | 's' scanner | 'q' quit";
     case Page::Detail:
       return "Detail: 'Esc' stock | 'e' edit | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+    case Page::ImportCsv:
+      if (importSyncPrompt_) {
+        return "Import sync: 'Enter'/'y' sync with DigiKey API | 'n'/'Esc' finish";
+      }
+      return "Import CSV: arrows/j/k move | 'Enter' accept | 'e' edit | 'Backspace' skip | 'Esc' cancel";
   }
 
   return {};
