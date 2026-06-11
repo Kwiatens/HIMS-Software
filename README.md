@@ -52,3 +52,6 @@ If you want to launch the executable directly, it will usually be in `build\Debu
 cmake --build build --target hims_tests
 build\Debug\hims_tests.exe
 ```
+
+The HIMS name, logo, visual identity, and official product branding are not licensed under the open-source licenses in this repository. They remain trademarks/branding assets of the project owner and may not be used to imply official endorsement or origin.
+Copyright © 2026 Paweł Kwiatkowski. All rights reserved.
