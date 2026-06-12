@@ -328,7 +328,7 @@ bool looksLikePackagingValue(const string& value) {
 
   static const initializer_list<const char*> kPackagingTokens = {
       "tapeandreel", "cuttape", "digireel", "tube", "tray", "bulk", "bag", "strip", "ammo", "box", "loose",
-      "pack", "reel"};
+      "reel"};
   return any_of(kPackagingTokens.begin(), kPackagingTokens.end(), [&](const char* token) {
     return normalized == token || normalized.find(token) != string::npos;
   });

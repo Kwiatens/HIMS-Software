@@ -31,8 +31,10 @@ add_executable(hims
   src/ui/pages/DashboardPage.cpp
   src/ui/pages/StockPage.cpp
   src/ui/pages/DetailPage.cpp
+  src/ui/pages/PrinterSetupPage.cpp
   src/ui/pages/ImportCsvPage.cpp
   src/core/Inventory.cpp
+  src/label_printer/LabelPrinter.cpp
   src/platform/HttpServer.cpp
   src/platform/DigiKeyApi.cpp
   src/platform/Console.cpp
@@ -41,7 +43,7 @@ add_executable(hims
 target_include_directories(hims PRIVATE src)
 
 if(WIN32)
-  target_link_libraries(hims PRIVATE ws2_32 shell32 winhttp comdlg32)
+  target_link_libraries(hims PRIVATE ws2_32 shell32 winhttp comdlg32 winspool)
 endif()
 
 target_link_libraries(hims PRIVATE ftxui::screen ftxui::dom ftxui::component)
@@ -55,7 +57,15 @@ add_custom_command(TARGET hims POST_BUILD
 add_executable(hims_tests
   tests/hims_tests.cpp
   src/import/DigiKeyCsvImport.cpp
+  src/ui/shared/AppUiShared.cpp
   src/core/Inventory.cpp
+  src/label_printer/LabelPrinter.cpp
 )
 
 target_include_directories(hims_tests PRIVATE src)
+
+if(WIN32)
+  target_link_libraries(hims_tests PRIVATE winspool)
+endif()
+
+target_link_libraries(hims_tests PRIVATE ftxui::screen ftxui::dom ftxui::component)

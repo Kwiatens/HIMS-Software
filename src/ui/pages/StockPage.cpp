@@ -241,6 +241,9 @@ void App::handleStockKey(const KeyEvent& key) {
         openUrl(scannerUrl());
         setMessage("Opened scanner page in the default browser", 3);
         break;
+      case 'p':
+        printSelectedLabel();
+        break;
       default:
         break;
     }

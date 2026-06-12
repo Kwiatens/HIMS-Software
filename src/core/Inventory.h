@@ -32,6 +32,8 @@ struct InventoryItem {
   string syncStatus = "synced";
   string sku;
   time_t lastUpdated = 0;
+  string himsId;
+  time_t createdAt = 0;
 
   bool lowStock() const;
   bool hasMissingMetadata() const;
@@ -72,6 +74,10 @@ string trim(const string& value);
 string toLower(string value);
 string nowTimestampString(time_t value);
 string makeId();
+string himsCategoryPrefix(const string& category);
+string makeHimsId(const string& category, size_t sequence);
+bool isHimsId(const string& value);
+void ensureInventoryIdentifiers(vector<InventoryItem>& items);
 string join(const vector<string>& values, char delimiter);
 vector<string> split(const string& value, char delimiter);
 vector<string> tokenizeQuery(const string& query);

@@ -82,12 +82,11 @@ For verification, always launch a fresh HIMS instance that belongs to the agent:
 
 When you change terminal rendering, do not stop at a successful build.
 
-- Launch the app in an agent-owned terminal window (CMD NOT Powershell!). Prefer isolated temp data unless the test explicitly needs the user's real inventory.
+- Launch the app in a visible terminal window (CMD NOT Powershell!)
 - Capture only the terminal window, not the whole desktop.
 - Inspect the screenshot for alignment, spacing, clipping, wrapping, color contrast, row striping, and whether animated or scrolling sections look correct.
 - Compare the screenshot against the requested layout, not just against the code.
 - If the screenshot shows the wrong window, the wrong executable, or an old code path, fix that before concluding the task.
-- If the screenshot shows the dashboard when you expected another page, assume the automation missed the target window or dialog; refocus the agent-owned window and retry before concluding.
 - Record the visual result in your reasoning so later agents know the screen was checked, not assumed.
 
 ## Test Environment Notes

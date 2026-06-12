@@ -911,6 +911,7 @@ App::App()
     : root_(filesystem::current_path()),
       dataPath_(documentsHimsPath()),
       inventoryPath_(dataPath_ / "inventory.db"),
+      printerPath_(dataPath_ / "printer.conf"),
       activityPath_(dataPath_ / "activity.tsv") {
   loadEnvironmentFile(locateDotEnvFile());
   ensureInventoryDatabaseCopied(inventoryPath_);
@@ -927,6 +928,8 @@ App::App()
 void App::loadState() {
   store_.load(inventoryPath_);
   loadActivities(activityPath_, activities_);
+  printerService_.loadConfig(printerPath_);
+  refreshPrinterState();
   if (activities_.empty()) {
     activities_.push_back(makeActivity("system", "Inventory loaded"));
     activities_.push_back(makeActivity("system", "Terminal dashboard initialized"));
@@ -938,7 +941,9 @@ void App::loadState() {
 }
 
 void App::saveState() {
+  ensureInventoryIdentifiers(store_.items());
   store_.save(inventoryPath_);
+  printerService_.saveConfig(printerPath_);
   saveActivities(activityPath_, activities_);
 }
 
@@ -962,6 +967,8 @@ ftxui::Element App::renderPageUi() const {
       return renderStockUi();
     case Page::Detail:
       return renderDetailUi();
+    case Page::PrinterSetup:
+      return renderPrinterSetupUi();
     case Page::ImportCsv:
       return renderImportCsvUi();
   }
@@ -1225,6 +1232,8 @@ ftxui::Element App::renderStatusBarUi() const {
   return ftxui::hbox({
              styledText(scannerUrl(), uiLinkColor()),
              ftxui::filler(),
+             styledText(ellipsize(printerSummary(), 44), uiAccentColor()),
+             ftxui::filler(),
              styledText(shortcutSummary(), uiDimColor()),
          }) |
          ftxui::bgcolor(uiPanelRightBg());
@@ -1324,6 +1333,9 @@ void App::handleKey(const KeyEvent& key) {
       break;
     case Page::Detail:
       handleDetailKey(key);
+      break;
+    case Page::PrinterSetup:
+      handlePrinterSetupKey(key);
       break;
     case Page::ImportCsv:
       handleImportCsvKey(key);
@@ -1640,6 +1652,11 @@ void App::render() {
       break;
     case Page::Detail:
       renderDetail(out, size);
+      break;
+    case Page::PrinterSetup:
+      out << kColorAccent << "Printer Setup" << kColorReset << "  ";
+      out << kColorMuted << "Zebra queue selection" << kColorReset << '\n';
+      out << kColorDim << printerSummary() << kColorReset << '\n';
       break;
     case Page::ImportCsv:
       renderImportCsv(out, size);
@@ -2049,6 +2066,7 @@ void App::renderSearchBar(ostringstream& out, const ConsoleSize&) {
 void App::renderStatusBar(ostringstream& out, const ConsoleSize& size) {
   out << string(size.columns, '-') << '\n';
   out << kColorLink << scannerUrl() << kColorReset << "  ";
+  out << kColorAccent << ellipsize(printerSummary(), max(24, size.columns / 3)) << kColorReset << "  ";
   out << kColorDim << shortcutSummary() << kColorReset << '\n';
 }
 
@@ -2246,6 +2264,7 @@ void App::beginEditCurrentItem(bool createNew) {
     workingCopy_.item.location = "Unassigned";
     workingCopy_.item.syncStatus = "needs_metadata";
     workingCopy_.item.lastUpdated = time(nullptr);
+    workingCopy_.item.createdAt = workingCopy_.item.lastUpdated;
     workingCopy_.originalIndex = store_.items().size();
   } else {
     const auto* current = selectedItem();
@@ -2802,11 +2821,11 @@ string App::shortcutSummary() const {
 
   switch (page_) {
     case Page::Dashboard:
-      return "Dashboard: 'Tab'/'1' stock | '2' scanner | '3' add | '4' reload | '5/i' import CSV | '/' search | 'q' quit";
+      return "Dashboard: 'Tab'/'1' stock | '2' scanner | '3' add | '4' reload | '5/i' import CSV | 'l' printer | '/' search | 'q' quit";
     case Page::Stock:
-      return "Stock: 'Tab'/'1' dashboard | 'Enter' detail | 'e' edit | 'n' new | 'Ctrl+Backspace' delete | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+      return "Stock: 'Tab'/'1' dashboard | 'Enter' detail | 'e' edit | 'n' new | 'Ctrl+Backspace' delete | 'p' print | '+/-' qty | '/' search | 's' scanner | 'q' quit";
     case Page::Detail:
-      return "Detail: 'Esc' stock | 'e' edit | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+      return "Detail: 'Esc' stock | 'e' edit | 'p' print | '+/-' qty | '/' search | 's' scanner | 'q' quit";
     case Page::ImportCsv:
       if (importSyncPrompt_) {
         return "Import sync: 'Enter'/'y' sync with DigiKey API | 'n'/'Esc' finish";

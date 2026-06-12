@@ -308,6 +308,7 @@ CsvImportCandidate candidateFromRow(const vector<string>& row, const ColumnMap& 
   candidate.item.syncStatus = "needs_metadata";
   candidate.item.sku = manufacturerPart;
   candidate.item.lastUpdated = time(nullptr);
+  candidate.item.createdAt = candidate.item.lastUpdated;
 
   addOptionalParameter(candidate.item.parameters, "Customer Reference", cell(row, columns.customerReference));
   addOptionalParameter(candidate.item.parameters, "Backorder Quantity", cell(row, columns.backorderQuantity));
@@ -386,6 +387,10 @@ void mergeImportedMetadata(InventoryItem& target, const InventoryItem& source) {
   assignIfBlank(target.digikeyPartNumber, source.digikeyPartNumber);
   assignIfBlank(target.productUrl, source.productUrl);
   assignIfBlank(target.sku, source.sku);
+  assignIfBlank(target.himsId, source.himsId);
+  if (target.createdAt == 0) {
+    target.createdAt = source.createdAt == 0 ? target.lastUpdated : source.createdAt;
+  }
 
   for (const auto& tag : source.tags) {
     const auto exists = any_of(target.tags.begin(), target.tags.end(), [&](const string& existing) {

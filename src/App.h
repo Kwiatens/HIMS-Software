@@ -5,6 +5,7 @@
 
 #include "core/Inventory.h"
 #include "import/DigiKeyCsvImport.h"
+#include "label_printer/LabelPrinter.h"
 #include "platform/Console.h"
 #include "platform/HttpServer.h"
 
@@ -30,6 +31,7 @@ class App {
     Dashboard,
     Stock,
     Detail,
+    PrinterSetup,
     ImportCsv,
   };
 
@@ -75,6 +77,7 @@ class App {
   void handleDashboardKey(const KeyEvent& key);
   void handleStockKey(const KeyEvent& key);
   void handleDetailKey(const KeyEvent& key);
+  void handlePrinterSetupKey(const KeyEvent& key);
   void handleImportCsvKey(const KeyEvent& key);
   void handleSearchKey(const KeyEvent& key);
   void handleEditMenuKey(const KeyEvent& key);
@@ -93,6 +96,7 @@ class App {
   ftxui::Element renderDashboardUi() const;
   ftxui::Element renderStockUi() const;
   ftxui::Element renderDetailUi() const;
+  ftxui::Element renderPrinterSetupUi() const;
   ftxui::Element renderImportCsvUi() const;
   ftxui::Element renderSearchBarUi() const;
   ftxui::Element renderStatusBarUi() const;
@@ -103,11 +107,17 @@ class App {
   bool messageVisible() const;
   void clearMessageIfExpired();
   void markDirty();
+  void refreshPrinterState();
+  void openPrinterSetup();
+  bool printSelectedLabel();
+  string printerSummary() const;
 
   vector<size_t> filteredIndices() const;
   size_t selectedIndex() const;
   InventoryItem* selectedItem();
   const InventoryItem* selectedItem() const;
+  PrinterQueueInfo* selectedPrinterQueue();
+  const PrinterQueueInfo* selectedPrinterQueue() const;
   void syncSelectionToFilter();
   void moveSelection(int delta);
   void changePage(Page page);
@@ -152,10 +162,14 @@ class App {
 
   InventoryStore store_;
   vector<ActivityEntry> activities_;
+  LabelPrinterService printerService_;
+  vector<PrinterQueueInfo> printerQueues_;
+  PrinterCheckResult printerCheck_;
   LocalHttpServer server_;
   filesystem::path root_;
   filesystem::path dataPath_;
   filesystem::path inventoryPath_;
+  filesystem::path printerPath_;
   filesystem::path activityPath_;
   Page page_ = Page::Dashboard;
   InputMode inputMode_ = InputMode::None;
@@ -189,6 +203,7 @@ class App {
   vector<FieldOption> menuOptions_;
   string deleteConfirmationItemId_;
   time_t deleteConfirmationUntil_ = 0;
+  size_t printerSelection_ = 0;
 };
 
 }  // namespace hims

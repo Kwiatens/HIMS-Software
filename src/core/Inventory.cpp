@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <random>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 #ifdef _WIN32
@@ -141,6 +142,89 @@ string sanitizeIdPart(const string& value) {
     output = "item";
   }
   return output;
+}
+
+string normalizeHimsPrefix(const string& category) {
+  const auto lowered = toLower(trim(category));
+  if (lowered.find("capacitor") != string::npos) {
+    return "C";
+  }
+  if (lowered.find("resistor") != string::npos) {
+    return "R";
+  }
+  if (lowered.find("inductor") != string::npos || lowered.find("choke") != string::npos ||
+      lowered.find("coil") != string::npos) {
+    return "L";
+  }
+  if (lowered.find("indicator") != string::npos || lowered.find("led") != string::npos) {
+    return "I";
+  }
+  if (lowered.find("connector") != string::npos) {
+    return "J";
+  }
+  if (lowered.find("microcontroller") != string::npos || lowered.find("mcu") != string::npos) {
+    return "U";
+  }
+  if (lowered.find("integrated circuit") != string::npos || lowered == "ic" || lowered.find("ic ") != string::npos) {
+    return "U";
+  }
+  if (lowered.find("sensor") != string::npos) {
+    return "S";
+  }
+  if (lowered.find("switch") != string::npos) {
+    return "K";
+  }
+  if (lowered.find("diode") != string::npos || lowered.find("rectifier") != string::npos) {
+    return "D";
+  }
+  if (lowered.find("fuse") != string::npos) {
+    return "F";
+  }
+  if (lowered.find("relay") != string::npos) {
+    return "Y";
+  }
+  if (lowered.find("transistor") != string::npos || lowered.find("mosfet") != string::npos ||
+      lowered.find("fet") != string::npos) {
+    return "T";
+  }
+
+  for (char ch : lowered) {
+    if (isalpha(static_cast<unsigned char>(ch))) {
+      return string(1, static_cast<char>(toupper(static_cast<unsigned char>(ch))));
+    }
+  }
+
+  return "X";
+}
+
+bool parseHimsIdValue(const string& value, string& prefix, size_t& sequence) {
+  const auto trimmed = trim(value);
+  if (trimmed.rfind("HIMS:", 0) != 0) {
+    return false;
+  }
+
+  const auto dash = trimmed.find('-', 5);
+  if (dash == string::npos || dash <= 5 || dash + 1 >= trimmed.size()) {
+    return false;
+  }
+
+  const auto rawPrefix = trimmed.substr(5, dash - 5);
+  if (rawPrefix.empty()) {
+    return false;
+  }
+
+  size_t parsedSequence = 0;
+  for (size_t index = dash + 1; index < trimmed.size(); ++index) {
+    const char ch = trimmed[index];
+    if (!isdigit(static_cast<unsigned char>(ch))) {
+      return false;
+    }
+    parsedSequence = parsedSequence * 10 + static_cast<size_t>(ch - '0');
+  }
+
+  prefix = rawPrefix;
+  sequence = parsedSequence;
+  return true;
 }
 
 struct ThresholdRule {
@@ -357,6 +441,22 @@ bool tableExists(SqliteConnection& connection, const string& tableName) {
   return sqliteApi().step(statement.stmt) == SQLITE_ROW;
 }
 
+bool tableColumnExists(SqliteConnection& connection, const string& tableName, const string& columnName) {
+  SqliteStatement statement;
+  const string sql = "PRAGMA table_info(" + tableName + ")";
+  if (sqliteApi().prepare_v2(connection.db, sql.c_str(), -1, &statement.stmt, nullptr) != SQLITE_OK) {
+    return false;
+  }
+
+  while (sqliteApi().step(statement.stmt) == SQLITE_ROW) {
+    const auto name = sqliteText(statement.stmt, 1);
+    if (toLower(name) == toLower(columnName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 string joinParametersForDb(const vector<Parameter>& parameters) {
   vector<string> serialized;
   serialized.reserve(parameters.size());
@@ -384,6 +484,26 @@ string joinTagsForDb(const vector<string>& tags) {
 
 vector<string> parseTagsFromDb(const string& value) {
   return split(value, '|');
+}
+
+bool createHimsTable(SqliteConnection& connection);
+
+bool ensureHimsTableSchema(SqliteConnection& connection) {
+  if (!createHimsTable(connection)) {
+    return false;
+  }
+
+  if (!tableColumnExists(connection, "hims_items", "hims_id")) {
+    if (!execSql(connection, "ALTER TABLE hims_items ADD COLUMN hims_id TEXT NOT NULL DEFAULT ''")) {
+      return false;
+    }
+  }
+  if (!tableColumnExists(connection, "hims_items", "created_at")) {
+    if (!execSql(connection, "ALTER TABLE hims_items ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")) {
+      return false;
+    }
+  }
+  return true;
 }
 
 InventoryItem legacyRowToItem(sqlite3_stmt* stmt) {
@@ -488,7 +608,9 @@ bool createHimsTable(SqliteConnection& connection) {
       product_url TEXT NOT NULL,
       sync_status TEXT NOT NULL,
       sku TEXT NOT NULL,
-      last_updated INTEGER NOT NULL
+      last_updated INTEGER NOT NULL,
+      hims_id TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT 0
     )
   )SQL");
 }
@@ -498,7 +620,7 @@ bool loadItemsFromHimsTable(SqliteConnection& connection, vector<InventoryItem>&
   const char* sql = R"SQL(
     SELECT id, part_name, manufacturer, category, quantity, reorder_threshold, location,
            tags, parameters, notes, digikey_part_number, datasheet_url, product_url,
-           sync_status, sku, last_updated
+           sync_status, sku, last_updated, hims_id, created_at
     FROM hims_items
     ORDER BY part_name COLLATE NOCASE ASC
   )SQL";
@@ -525,6 +647,8 @@ bool loadItemsFromHimsTable(SqliteConnection& connection, vector<InventoryItem>&
     item.syncStatus = sqliteText(statement.stmt, 13);
     item.sku = sqliteText(statement.stmt, 14);
     item.lastUpdated = static_cast<time_t>(sqliteApi().column_int64(statement.stmt, 15));
+    item.himsId = sqliteText(statement.stmt, 16);
+    item.createdAt = static_cast<time_t>(sqliteApi().column_int64(statement.stmt, 17));
     items.push_back(move(item));
   }
 
@@ -556,7 +680,7 @@ bool importLegacyItems(SqliteConnection& connection, vector<InventoryItem>& item
 }
 
 bool writeItemsToHimsTable(SqliteConnection& connection, const vector<InventoryItem>& items) {
-  if (!createHimsTable(connection)) {
+  if (!ensureHimsTableSchema(connection)) {
     return false;
   }
 
@@ -573,8 +697,8 @@ bool writeItemsToHimsTable(SqliteConnection& connection, const vector<InventoryI
     INSERT OR REPLACE INTO hims_items (
       id, part_name, manufacturer, category, quantity, reorder_threshold, location,
       tags, parameters, notes, digikey_part_number, datasheet_url, product_url,
-      sync_status, sku, last_updated
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      sync_status, sku, last_updated, hims_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   )SQL";
 
   if (sqliteApi().prepare_v2(connection.db, sql, -1, &statement.stmt, nullptr) != SQLITE_OK) {
@@ -601,6 +725,8 @@ bool writeItemsToHimsTable(SqliteConnection& connection, const vector<InventoryI
     sqliteApi().bind_text(statement.stmt, 14, item.syncStatus.c_str(), -1, SQLITE_TRANSIENT);
     sqliteApi().bind_text(statement.stmt, 15, item.sku.c_str(), -1, SQLITE_TRANSIENT);
     sqliteApi().bind_int64(statement.stmt, 16, static_cast<sqlite3_int64>(item.lastUpdated));
+    sqliteApi().bind_text(statement.stmt, 17, item.himsId.c_str(), -1, SQLITE_TRANSIENT);
+    sqliteApi().bind_int64(statement.stmt, 18, static_cast<sqlite3_int64>(item.createdAt));
 
     if (sqliteApi().step(statement.stmt) != SQLITE_DONE) {
       execSql(connection, "ROLLBACK");
@@ -817,7 +943,8 @@ bool InventoryItem::hasMissingMetadata() const {
 string InventoryItem::searchableText() const {
   ostringstream out;
   out << partName << ' ' << manufacturer << ' ' << category << ' ' << location << ' ' << notes << ' '
-      << digikeyPartNumber << ' ' << datasheetUrl << ' ' << productUrl << ' ' << sku << ' ' << syncStatus;
+      << digikeyPartNumber << ' ' << datasheetUrl << ' ' << productUrl << ' ' << sku << ' ' << himsId << ' '
+      << syncStatus;
 
   for (const auto& tag : tags) {
     out << ' ' << tag;
@@ -872,6 +999,65 @@ string makeId() {
   out << hex << setw(10) << setfill('0') << (stamp & 0xfffffffffULL) << '-'
       << setw(10) << setfill('0') << (dist(rng) & 0xfffffffffULL);
   return out.str();
+}
+
+string himsCategoryPrefix(const string& category) {
+  return normalizeHimsPrefix(category);
+}
+
+string makeHimsId(const string& category, size_t sequence) {
+  ostringstream out;
+  out << "HIMS:" << himsCategoryPrefix(category) << '-' << uppercase << setw(5) << setfill('0') << sequence;
+  return out.str();
+}
+
+bool isHimsId(const string& value) {
+  string prefix;
+  size_t sequence = 0;
+  return parseHimsIdValue(value, prefix, sequence);
+}
+
+void ensureInventoryIdentifiers(vector<InventoryItem>& items) {
+  unordered_map<string, size_t> nextSequenceByPrefix;
+  unordered_set<string> usedIds;
+
+  for (const auto& item : items) {
+    if (!trim(item.himsId).empty()) {
+      usedIds.insert(toLower(trim(item.himsId)));
+      string prefix;
+      size_t sequence = 0;
+      if (parseHimsIdValue(item.himsId, prefix, sequence)) {
+        auto& nextSequence = nextSequenceByPrefix[prefix];
+        nextSequence = max(nextSequence, sequence + 1);
+      }
+    }
+  }
+
+  for (auto& item : items) {
+    if (item.createdAt == 0) {
+      item.createdAt = item.lastUpdated == 0 ? nowEpoch() : item.lastUpdated;
+    }
+
+    auto normalizedId = trim(item.himsId);
+    if (!normalizedId.empty() && isHimsId(normalizedId)) {
+      item.himsId = normalizedId;
+      continue;
+    }
+
+    const auto prefix = himsCategoryPrefix(item.category);
+    auto& nextSequence = nextSequenceByPrefix[prefix];
+    if (nextSequence == 0) {
+      nextSequence = 1;
+    }
+
+    string candidate;
+    do {
+      candidate = makeHimsId(item.category, nextSequence++);
+    } while (usedIds.count(toLower(candidate)) != 0);
+
+    item.himsId = move(candidate);
+    usedIds.insert(toLower(item.himsId));
+  }
 }
 
 string join(const vector<string>& values, char delimiter) {
@@ -964,6 +1150,14 @@ bool matchesQuery(const InventoryItem& item, const string& query) {
     if (token.rfind("sku:", 0) == 0) {
       const auto value = token.substr(4);
       if (tokenMatchesField(item.sku, value)) {
+        continue;
+      }
+      return false;
+    }
+
+    if (token.rfind("hims:", 0) == 0 || token.rfind("himsid:", 0) == 0) {
+      const auto value = token.substr(token.find(':') + 1);
+      if (tokenMatchesField(item.himsId, value)) {
         continue;
       }
       return false;
@@ -1195,6 +1389,7 @@ vector<InventoryItem> seedInventory() {
       nowEpoch(),
   });
 
+  ensureInventoryIdentifiers(items);
   return items;
 }
 
@@ -1212,6 +1407,13 @@ bool InventoryStore::load(const filesystem::path& path) {
   SqliteConnection connection;
   if (!openDatabase(path, connection)) {
     items_ = seedInventory();
+    ensureInventoryIdentifiers(items_);
+    return false;
+  }
+
+  if (!ensureHimsTableSchema(connection)) {
+    items_ = seedInventory();
+    ensureInventoryIdentifiers(items_);
     return false;
   }
 
@@ -1232,6 +1434,7 @@ bool InventoryStore::load(const filesystem::path& path) {
   if (!legacyItems.empty() && (himsItems.empty() || legacyItems.size() > himsItems.size())) {
     items_ = move(legacyItems);
     loaded = true;
+    ensureInventoryIdentifiers(items_);
     writeItemsToHimsTable(connection, items_);
   } else if (loaded && !himsItems.empty()) {
     items_ = move(himsItems);
@@ -1242,21 +1445,25 @@ bool InventoryStore::load(const filesystem::path& path) {
     } else if (!legacyItems.empty()) {
       items_ = move(legacyItems);
       loaded = true;
+      ensureInventoryIdentifiers(items_);
       writeItemsToHimsTable(connection, items_);
     }
   }
 
   if (!loaded || items_.empty()) {
     items_ = seedInventory();
+    ensureInventoryIdentifiers(items_);
     writeItemsToHimsTable(connection, items_);
     return false;
   }
 
+  ensureInventoryIdentifiers(items_);
   return true;
 #else
   ifstream file(path);
   if (!file) {
     items_ = seedInventory();
+    ensureInventoryIdentifiers(items_);
     return false;
   }
 
@@ -1275,22 +1482,30 @@ bool InventoryStore::load(const filesystem::path& path) {
 
   if (items_.empty()) {
     items_ = seedInventory();
+    ensureInventoryIdentifiers(items_);
     return false;
   }
 
+  ensureInventoryIdentifiers(items_);
   return true;
 #endif
 }
 
 bool InventoryStore::save(const filesystem::path& path) const {
 #ifdef _WIN32
+  auto items = items_;
+  ensureInventoryIdentifiers(items);
+
   SqliteConnection connection;
   if (!openDatabase(path, connection)) {
     return false;
   }
 
-  return writeItemsToHimsTable(connection, items_);
+  return writeItemsToHimsTable(connection, items);
 #else
+  auto items = items_;
+  ensureInventoryIdentifiers(items);
+
   filesystem::create_directories(path.parent_path());
 
   ofstream file(path, ios::trunc);
@@ -1299,7 +1514,7 @@ bool InventoryStore::save(const filesystem::path& path) const {
   }
 
   file << "# HIMS inventory data\n";
-  for (const auto& item : items_) {
+  for (const auto& item : items) {
     file << serializeItem(item) << '\n';
   }
   return true;
@@ -1323,8 +1538,9 @@ const InventoryItem* InventoryStore::findById(const string& id) const {
 InventoryItem* InventoryStore::findByCode(const string& code) {
   const auto needle = toLower(trim(code));
   const auto it = find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
-    return toLower(item.id) == needle || toLower(item.sku) == needle || toLower(item.digikeyPartNumber) == needle ||
-           containsInsensitive(item.productUrl, needle) || containsInsensitive(item.datasheetUrl, needle);
+    return toLower(item.id) == needle || toLower(item.himsId) == needle || toLower(item.sku) == needle ||
+           toLower(item.digikeyPartNumber) == needle || containsInsensitive(item.productUrl, needle) ||
+           containsInsensitive(item.datasheetUrl, needle);
   });
   return it == items_.end() ? nullptr : &(*it);
 }
@@ -1332,8 +1548,9 @@ InventoryItem* InventoryStore::findByCode(const string& code) {
 const InventoryItem* InventoryStore::findByCode(const string& code) const {
   const auto needle = toLower(trim(code));
   const auto it = find_if(items_.begin(), items_.end(), [&](const InventoryItem& item) {
-    return toLower(item.id) == needle || toLower(item.sku) == needle || toLower(item.digikeyPartNumber) == needle ||
-           containsInsensitive(item.productUrl, needle) || containsInsensitive(item.datasheetUrl, needle);
+    return toLower(item.id) == needle || toLower(item.himsId) == needle || toLower(item.sku) == needle ||
+           toLower(item.digikeyPartNumber) == needle || containsInsensitive(item.productUrl, needle) ||
+           containsInsensitive(item.datasheetUrl, needle);
   });
   return it == items_.end() ? nullptr : &(*it);
 }
@@ -1352,7 +1569,8 @@ string serializeItem(const InventoryItem& item) {
       << quoted(join(parameterEntries, ';'))
       << '\t' << quoted(item.notes) << '\t' << quoted(item.digikeyPartNumber) << '\t'
       << quoted(item.datasheetUrl) << '\t' << quoted(item.productUrl) << '\t'
-      << quoted(item.syncStatus) << '\t' << quoted(item.sku) << '\t' << item.lastUpdated;
+      << quoted(item.syncStatus) << '\t' << quoted(item.sku) << '\t' << item.lastUpdated << '\t'
+      << quoted(item.himsId) << '\t' << item.createdAt;
   return out.str();
 }
 
@@ -1380,6 +1598,12 @@ bool deserializeItem(const string& line, InventoryItem& item) {
 
   if (item.lastUpdated == 0) {
     item.lastUpdated = nowEpoch();
+  }
+  item.createdAt = item.lastUpdated;
+  if (input >> quoted(item.himsId)) {
+    if (!(input >> item.createdAt) || item.createdAt == 0) {
+      item.createdAt = item.lastUpdated;
+    }
   }
 
   return true;
@@ -1459,6 +1683,10 @@ ScanResolution resolveScanCode(InventoryStore& store, const string& rawCode) {
     return {true, false, existing->id, "Matched existing item"};
   }
 
+  if (toLower(code).rfind("hims:", 0) == 0) {
+    return {false, false, {}, "Unknown HIMS ID"};
+  }
+
   InventoryItem item;
   item.id = sanitizeIdPart(code) + "-" + makeId().substr(0, 8);
   item.partName = "Scanned DigiKey Item";
@@ -1473,6 +1701,7 @@ ScanResolution resolveScanCode(InventoryStore& store, const string& rawCode) {
   item.syncStatus = "needs_metadata";
   item.sku = code;
   item.lastUpdated = nowEpoch();
+  item.createdAt = item.lastUpdated;
   store.items().push_back(move(item));
   return {true, true, store.items().back().id, "Created a placeholder item from the scanned code"};
 }

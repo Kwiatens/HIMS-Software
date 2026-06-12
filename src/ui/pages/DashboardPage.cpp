@@ -323,7 +323,7 @@ DashboardSnapshot buildDashboardSnapshot(const vector<InventoryItem>& items, con
       {"HIMS Scan", scannerRunning, scannerUrl,
        snapshot.lastScannedPart.empty() ? "Waiting for scans" : snapshot.lastScannedPart,
        scannerRunning ? string() : "Scanner server is not running"},
-      {"Label Printer", false, "not connected", "No print jobs yet", "Printer integration pending"},
+      {"Label Printer", false, "not configured", "No print jobs yet", "Printer integration pending"},
   };
 
   sort(snapshot.stockWarnings.begin(), snapshot.stockWarnings.end(), [](const AlertRow& lhs, const AlertRow& rhs) {
@@ -346,7 +346,17 @@ string timestampOrDash(time_t value) {
 }  // namespace
 
 ftxui::Element App::renderDashboardUi() const {
-  const auto snapshot = buildDashboardSnapshot(store_.items(), activities_, server_.running(), scannerUrl());
+  auto snapshot = buildDashboardSnapshot(store_.items(), activities_, server_.running(), scannerUrl());
+  if (snapshot.devices.size() > 1) {
+    const auto configured = printerService_.configuredPrinterInfo();
+    snapshot.devices[1].connected = printerCheck_.ok && configured.has_value();
+    snapshot.devices[1].endpoint = configured ? configured->portName : printerService_.configuredPrinter();
+    snapshot.devices[1].lastActivity = printerSummary();
+    snapshot.devices[1].error = printerCheck_.ok
+                                    ? string()
+                                    : (printerCheck_.message.empty() ? string("Printer is not ready")
+                                                                      : printerCheck_.message);
+  }
   const auto* activeScreen = ftxui::ScreenInteractive::Active();
   const int screenWidth = activeScreen != nullptr ? activeScreen->dimx() : 120;
   const int screenHeight = activeScreen != nullptr ? activeScreen->dimy() : 40;
@@ -500,7 +510,7 @@ void App::handleDashboardKey(const KeyEvent& key) {
         startSearch();
         break;
       case 'l':
-        setMessage("Label printing is not connected yet", 3);
+        openPrinterSetup();
         break;
       case '/':
         startSearch();

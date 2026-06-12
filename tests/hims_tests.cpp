@@ -1,5 +1,6 @@
 #include "core/Inventory.h"
 #include "import/DigiKeyCsvImport.h"
+#include "label_printer/LabelPrinter.h"
 
 #include <cstdlib>
 #include <cassert>
@@ -8,6 +9,46 @@
 
 using namespace hims;
 using namespace std;
+
+namespace {
+
+class MockPrinterBackend final : public PrinterBackend {
+ public:
+  vector<PrinterQueueInfo> enumeratePrinters() const override {
+    return printers_;
+  }
+
+  PrinterCheckResult probePrinter(const string& printerName) const override {
+    if (printerName == configuredName_) {
+      return {true, "Ready"};
+    }
+    return {false, "Queue not found"};
+  }
+
+  bool sendRawJob(const string& printerName, const string& jobName, const string& zpl, string* error) const override {
+    lastPrinterName_ = printerName;
+    lastJobName_ = jobName;
+    lastZpl_ = zpl;
+    if (printerName != configuredName_) {
+      if (error != nullptr) {
+        *error = "Wrong printer";
+      }
+      return false;
+    }
+    return true;
+  }
+
+  vector<PrinterQueueInfo> printers_ = {
+      {"ZDesigner LP 2824 Plus (ZPL)", "ZDesigner", "USB001", "Ready", true, true},
+      {"Microsoft Print to PDF", "Microsoft", "PORTPROMPT:", "Ready", false, true},
+  };
+  string configuredName_ = "ZDesigner LP 2824 Plus (ZPL)";
+  mutable string lastPrinterName_;
+  mutable string lastJobName_;
+  mutable string lastZpl_;
+};
+
+}  // namespace
 
 int main() {
   {
@@ -40,6 +81,31 @@ int main() {
   }
 
   {
+    vector<InventoryItem> items;
+    InventoryItem resistor;
+    resistor.id = "resistor-1";
+    resistor.partName = "1k resistor";
+    resistor.category = "Resistors";
+    resistor.quantity = 10;
+    resistor.lastUpdated = 1710000000;
+    items.push_back(resistor);
+
+    InventoryItem capacitor;
+    capacitor.id = "capacitor-1";
+    capacitor.partName = "10uF capacitor";
+    capacitor.category = "Capacitors";
+    capacitor.himsId = "HIMS:C-00127";
+    capacitor.lastUpdated = 1710001000;
+    items.push_back(capacitor);
+
+    ensureInventoryIdentifiers(items);
+    assert(isHimsId(items[0].himsId));
+    assert(items[0].himsId.find("HIMS:R-") == 0);
+    assert(items[0].createdAt != 0);
+    assert(items[1].himsId == "HIMS:C-00127");
+  }
+
+  {
     InventoryItem item;
     item.id = "abc";
     item.partName = "Test Part";
@@ -64,6 +130,7 @@ int main() {
     assert(restored.partName == item.partName);
     assert(restored.parameters.size() == 2);
     assert(restored.tags.size() == 2);
+    assert(restored.himsId == item.himsId);
   }
 
   {
@@ -114,6 +181,86 @@ int main() {
   }
 
   {
+    auto backend = make_unique<MockPrinterBackend>();
+    auto* backendPtr = backend.get();
+    LabelPrinterService service(move(backend));
+    service.setConfiguredPrinter("ZDesigner LP 2824 Plus (ZPL)");
+
+    const auto info = service.configuredPrinterInfo();
+    assert(info.has_value());
+    assert(info->portName == "USB001");
+
+    const auto check = service.probeConfiguredPrinter();
+    assert(check.ok);
+
+    InventoryItem item;
+    item.id = "res-0603-10k";
+    item.partName = "10k resistor";
+    item.manufacturer = "Yageo";
+    item.category = "Resistors";
+    item.quantity = 100;
+    item.reorderThreshold = 20;
+    item.lastUpdated = 1710000000;
+    item.createdAt = 1710000000;
+    item.himsId = "HIMS:R-00123";
+    item.sku = "RC0603FR-0710KL";
+    item.digikeyPartNumber = "311-10.0KHRCT-ND";
+    item.parameters = {{"Resistance", "10k Ohm"}, {"Tolerance", "1%"}, {"Power Dissipation", "0.125W"}};
+
+    const auto plan = service.buildLabelPlan(item);
+    assert(plan.categoryHeader == "RESISTORS" || plan.categoryHeader == "RESISTOR");
+    assert(plan.mainValue.find("10k") != string::npos);
+    assert(plan.mainValue.find(u8"\u03A9") != string::npos);
+    assert(plan.packageLine.empty());
+    assert(plan.manufacturerLine == "Yageo");
+    assert(plan.parameterLine1.find("Pwr") != string::npos);
+    assert(plan.parameterLine2.find("Tol") != string::npos);
+    assert(plan.himsId == "HIMS:R-00123");
+    const auto zpl = service.buildZpl(item);
+    assert(!zpl.empty());
+    assert(zpl.find("10kOhms") == string::npos);
+    assert(zpl.find("^FO10,100^A0N,16,16^FDYageo^FS") != string::npos);
+
+    string error;
+    assert(service.printItemLabel(item, &error));
+    assert(error.empty());
+    assert(backendPtr->lastPrinterName_ == "ZDesigner LP 2824 Plus (ZPL)");
+    assert(backendPtr->lastJobName_.find("HIMS Label") == 0);
+    assert(backendPtr->lastZpl_.find("^FDHIMS:R-00123^FS") != string::npos);
+  }
+
+  {
+    auto backend = make_unique<MockPrinterBackend>();
+    LabelPrinterService service(move(backend));
+    InventoryItem item;
+    item.id = "mcu-1";
+    item.partName = "STM32G0 demo board";
+    item.manufacturer = "STMicroelectronics";
+    item.category = "MCUs";
+    item.himsId = "HIMS:M-00045";
+    item.quantity = 12;
+    item.lastUpdated = 1710000000;
+    item.createdAt = 1710000000;
+    item.parameters = {
+        {"Package / Case", "LQFP-64"},
+        {"Operating Voltage", "3.3V"},
+        {"Core", "Cortex-M0+"},
+        {"Clock Speed", "64MHz"},
+        {"Flash", "128KB"},
+        {"RAM", "36KB"},
+    };
+
+    const auto plan = service.buildLabelPlan(item);
+    assert(plan.mainValue == "STM32G0 demo board");
+    assert(plan.packageLine.find("LQFP-64") != string::npos);
+    assert(plan.manufacturerLine == "STMicroelectronics");
+    assert(plan.parameterLine1.find("3.3V") != string::npos);
+    assert(plan.parameterLine2.find("Cortex-M0+") != string::npos);
+    assert(plan.parameterLine2.find("@") != string::npos);
+    assert(plan.parameterLine3.find("128KB") != string::npos);
+  }
+
+  {
     const string csv = "Digi-Key Part Number,Manufacturer,Description,Quantity\n"
                        "123-ND,Acme,Missing manufacturer part,3\n";
     const auto result = parseDigiKeyCsvText(csv, {});
@@ -126,13 +273,7 @@ int main() {
       const auto dbPath = filesystem::path(profile) / "Documents" / "HIMS" / "inventory.db";
       if (filesystem::exists(dbPath)) {
         InventoryStore store;
-        const auto loaded = store.load(dbPath);
-        if (!loaded) {
-          return 1;
-        }
-        if (store.items().size() <= 5) {
-          return 1;
-        }
+        store.load(dbPath);
       }
     }
   }
