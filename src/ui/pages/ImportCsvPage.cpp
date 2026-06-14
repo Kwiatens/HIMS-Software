@@ -63,8 +63,8 @@ ftxui::Element App::renderImportCsvUi() const {
     });
   }
 
-  const int detailOuterWidth = clamp(screenWidth / 3, 44, 64);
-  const int listOuterWidth = max(52, screenWidth - detailOuterWidth - 1);
+  const int detailOuterWidth = clamp(screenWidth / 3, 42, 58);
+  const int listOuterWidth = max(42, screenWidth - detailOuterWidth - 1);
   const int listInnerWidth = max(20, listOuterWidth - 2);
   const int statusWidth = 7;
   const int qtyWidth = 8;

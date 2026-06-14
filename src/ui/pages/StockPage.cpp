@@ -22,8 +22,8 @@ ftxui::Element App::renderStockUi() const {
   const auto filtered = filteredIndices();
   const auto* activeScreen = ftxui::ScreenInteractive::Active();
   const int screenWidth = activeScreen != nullptr ? activeScreen->dimx() : 120;
-  const int detailOuterWidth = clamp(screenWidth / 4, 38, 52);
-  const int listOuterWidth = max(40, screenWidth - detailOuterWidth - 1);
+  const int detailOuterWidth = clamp(screenWidth / 3, 42, 60);
+  const int listOuterWidth = max(42, screenWidth - detailOuterWidth - 1);
   const int listInnerWidth = max(20, listOuterWidth - 2);
   const int detailInnerWidth = max(20, detailOuterWidth - 2);
   const int qtyWidth = 10;

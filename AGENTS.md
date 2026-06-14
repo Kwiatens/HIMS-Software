@@ -72,18 +72,34 @@ Do not rely on a HIMS window that the user already has open. Agents may not reli
 
 For verification, always launch a fresh HIMS instance that belongs to the agent:
 
-- Prefer an isolated runtime environment when possible, using a temporary `USERPROFILE` so test data goes under that temp profile's `Documents/HIMS` instead of the user's real inventory.
-- If a visible window is required for screenshot QA, launch a dedicated CMD window for the agent-owned instance, bring only that window to the foreground for capture, and close it when verification is complete.
+- Build first, then launch the already-built executable for visual verification. Do not use `run.ps1` for visual QA because it rebuilds and then detaches the app in a way that makes ownership and window capture harder to prove.
+- Launch the app in a real visible desktop terminal window that the user can see and the agent can inspect. Do not use a temporary `USERPROFILE`, hidden process, minimized process, detached process, or background-only launch for visual verification.
+- Use the normal user profile/data for visual verification unless the user explicitly asks for a temporary test profile.
+- Give the verification terminal a unique title such as `HIMS-Agent-Verify-<timestamp>` so the screenshot tool can identify the correct window without touching an unrelated terminal.
+- For a plain CMD verification window, launch with a command shaped like:
+
+```powershell
+$title = "HIMS-Agent-Verify-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+$exe = (Resolve-Path ".\build\Debug\hims.exe").Path
+Start-Process -FilePath "$env:ComSpec" -WorkingDirectory (Split-Path $exe) -ArgumentList "/k", "title $title && `"$exe`""
+```
+
+- If screenshot QA is needed, capture the MAXIMISED FULL SCREEN terminal window whose title contains the unique verification title. Windows Terminal may append the running executable path to the title. Use a window-only capture method such as `PrintWindow` against that exact window handle.
+- The verification window must remain visible and inspectable; do not rely on a shell process that cannot be seen on the desktop.
+- Do not use full-desktop or screen-pixel screenshots for terminal QA; they can capture whatever is behind the window.
+- If the terminal must be made visible for interactive inspection, keep it on the agent-owned window only, not on a user-owned HIMS session.
 - Do not inspect, drive, or capture a user-owned HIMS window unless the user explicitly asks you to use that exact window.
+- If the app throws a startup error dialog, opens the wrong surface, or the captured image is not the HIMS terminal, close only that failed agent-owned verification window before relaunching. Do not spawn repeated extra windows.
 - If a user-owned or stale HIMS instance locks `build\Debug\hims.exe`, close only the HIMS verification process you started when possible. Ask before closing anything that may belong to the user.
-- Record whether verification used isolated temp data or the real `Documents/HIMS` data.
+- Record that visual verification used the normal `Documents/HIMS` data, unless the user explicitly requested otherwise.
 
 ## TUI Visual QA
 
 When you change terminal rendering, do not stop at a successful build.
 
-- Launch the app in a visible terminal window (CMD NOT Powershell!)
-- Capture only the terminal window, not the whole desktop.
+- Launch the app.
+- Capture only the MAXIMISED FULL SCREEN terminal window itself, and make sure it is the visible agent-owned terminal window rather than a hidden host or orphaned shell process.
+- If you need to move between screens, prefer a fresh agent-owned visible terminal window with direct manual interaction, or restrict automated capture to static/idle screens that do not require input replay.
 - Inspect the screenshot for alignment, spacing, clipping, wrapping, color contrast, row striping, and whether animated or scrolling sections look correct.
 - Compare the screenshot against the requested layout, not just against the code.
 - If the screenshot shows the wrong window, the wrong executable, or an old code path, fix that before concluding the task.

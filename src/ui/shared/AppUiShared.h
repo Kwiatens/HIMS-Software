@@ -19,22 +19,22 @@ namespace hims {
 using namespace std;
 
 inline constexpr const char* kColorReset = "\x1b[0m";
-inline constexpr const char* kColorTitle = "\x1b[38;5;81m";
-inline constexpr const char* kColorAccent = "\x1b[38;5;49m";
-inline constexpr const char* kColorInfo = "\x1b[38;5;117m";
-inline constexpr const char* kColorSuccess = "\x1b[38;5;114m";
-inline constexpr const char* kColorLink = "\x1b[38;5;87m";
-inline constexpr const char* kColorLabel = "\x1b[38;5;111m";
-inline constexpr const char* kColorMuted = "\x1b[38;5;243m";
+inline constexpr const char* kColorTitle = "\x1b[38;5;215m";
+inline constexpr const char* kColorAccent = "\x1b[38;5;208m";
+inline constexpr const char* kColorInfo = "\x1b[38;5;250m";
+inline constexpr const char* kColorSuccess = "\x1b[38;5;252m";
+inline constexpr const char* kColorLink = "\x1b[38;5;221m";
+inline constexpr const char* kColorLabel = "\x1b[38;5;246m";
+inline constexpr const char* kColorMuted = "\x1b[38;5;244m";
 inline constexpr const char* kColorWarn = "\x1b[38;5;214m";
-inline constexpr const char* kColorDanger = "\x1b[38;5;203m";
-inline constexpr const char* kColorDim = "\x1b[38;5;245m";
-inline constexpr const char* kColorSelect = "\x1b[48;5;236m";
-inline constexpr const char* kBgPanelLeft = "\x1b[48;5;233m";
-inline constexpr const char* kBgPanelRight = "\x1b[48;5;235m";
-inline constexpr const char* kBgRowDark = "\x1b[48;5;232m";
-inline constexpr const char* kBgRowLight = "\x1b[48;5;236m";
-inline constexpr const char* kBgRowSelected = "\x1b[48;5;24m";
+inline constexpr const char* kColorDanger = "\x1b[38;5;167m";
+inline constexpr const char* kColorDim = "\x1b[38;5;239m";
+inline constexpr const char* kColorSelect = "\x1b[48;5;238m";
+inline constexpr const char* kBgPanelLeft = "\x1b[48;5;22m";
+inline constexpr const char* kBgPanelRight = "\x1b[48;5;24m";
+inline constexpr const char* kBgRowDark = "\x1b[48;5;18m";
+inline constexpr const char* kBgRowLight = "\x1b[48;5;28m";
+inline constexpr const char* kBgRowSelected = "\x1b[48;5;58m";
 
 struct DetailField {
   string label;

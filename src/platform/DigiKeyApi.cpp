@@ -1,3 +1,6 @@
+// HIMS - Hardware Inventory Management System
+// DigiKey API response parsing and metadata synchronization.
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 
@@ -639,6 +642,83 @@ optional<string> readFirstMember(const JsonPtr& root, initializer_list<const cha
   return nullopt;
 }
 
+string normalizeParameterKey(const string& value) {
+  string normalized;
+  normalized.reserve(value.size());
+  for (unsigned char ch : value) {
+    if (isalnum(ch)) {
+      normalized.push_back(static_cast<char>(tolower(ch)));
+    }
+  }
+  return normalized;
+}
+
+bool looksLikeFrequencyValue(const string& value) {
+  const auto normalized = normalizeParameterKey(value);
+  return normalized.find("hz") != string::npos;
+}
+
+bool looksLikeInductanceValue(const string& value) {
+  const auto normalized = normalizeParameterKey(value);
+  if (normalized.empty() || normalized.find("hz") != string::npos) {
+    return false;
+  }
+
+  if (normalized.find("uh") != string::npos || normalized.find("nh") != string::npos ||
+      normalized.find("ph") != string::npos || normalized.find("henry") != string::npos) {
+    return true;
+  }
+
+  return normalized.find_first_of("0123456789") != string::npos && !normalized.empty() && normalized.back() == 'h';
+}
+
+optional<string> readParameterText(const JsonPtr& entry, const string& label = {}) {
+  vector<string> candidates;
+  for (const auto* key : {"ParameterValue", "ValueText", "Value"}) {
+    if (const auto* member = findMember(entry, key); member != nullptr) {
+      const auto text = valueText(*member);
+      if (!text.empty()) {
+        candidates.push_back(text);
+      }
+    }
+  }
+
+  if (candidates.empty()) {
+    return nullopt;
+  }
+
+  const auto normalizedLabel = normalizeParameterKey(label);
+  const auto chooseFirstMatching = [&](auto predicate) -> optional<string> {
+    for (const auto& candidate : candidates) {
+      if (predicate(candidate)) {
+        return candidate;
+      }
+    }
+    return nullopt;
+  };
+
+  if (normalizedLabel.find("inductance") != string::npos || normalizedLabel == "l") {
+    if (const auto inductance = chooseFirstMatching(looksLikeInductanceValue); inductance.has_value()) {
+      return inductance;
+    }
+    if (const auto nonFrequency = chooseFirstMatching([&](const string& candidate) {
+          return !looksLikeFrequencyValue(candidate);
+        });
+        nonFrequency.has_value()) {
+      return nonFrequency;
+    }
+    return nullopt;
+  }
+
+  if (normalizedLabel.find("frequency") != string::npos || normalizedLabel == "f") {
+    if (const auto frequency = chooseFirstMatching(looksLikeFrequencyValue); frequency.has_value()) {
+      return frequency;
+    }
+  }
+
+  return candidates.front();
+}
+
 bool looksLikePackagingType(const string& value) {
   string normalized;
   normalized.reserve(value.size());
@@ -678,7 +758,7 @@ optional<string> readParameterValue(const JsonPtr& product, initializer_list<con
 
   for (const auto& entry : *entries) {
     const auto label = readFirstMember(entry, {"Parameter", "ParameterText"});
-    const auto value = readFirstMember(entry, {"Value", "ValueText", "ParameterValue"});
+    const auto value = readParameterText(entry, label.value_or(""));
     if (!label.has_value() || !value.has_value()) {
       continue;
     }
@@ -883,6 +963,48 @@ optional<string> extractComponentPackageFromText(const string& text) {
   return nullopt;
 }
 
+bool looksLikeInductorText(const string& text) {
+  const auto normalized = normalizeParameterKey(text);
+  return normalized.find("inductor") != string::npos || normalized.find("fixedind") != string::npos ||
+         normalized.find("choke") != string::npos || normalized.find("coil") != string::npos;
+}
+
+string canonicalInductanceUnit(string unit) {
+  transform(unit.begin(), unit.end(), unit.begin(), [](unsigned char ch) {
+    return static_cast<char>(tolower(ch));
+  });
+  if (unit == "uh") {
+    return "uH";
+  }
+  if (unit == "nh") {
+    return "nH";
+  }
+  if (unit == "mh") {
+    return "mH";
+  }
+  if (unit == "ph") {
+    return "pH";
+  }
+  return "H";
+}
+
+optional<string> extractInductanceFromText(const string& text) {
+  if (!looksLikeInductorText(text)) {
+    return nullopt;
+  }
+
+  regex valuePattern(R"(\b(\d+(?:\.\d+)?|\d+[rR]\d+)\s*([munp]?h)\b)", regex_constants::icase);
+  smatch match;
+  if (regex_search(text, match, valuePattern) && match.size() > 2) {
+    auto number = match[1].str();
+    replace(number.begin(), number.end(), 'R', '.');
+    replace(number.begin(), number.end(), 'r', '.');
+    return number + canonicalInductanceUnit(match[2].str());
+  }
+
+  return nullopt;
+}
+
 optional<string> extractComponentPackage(const JsonPtr& product) {
   const auto fromParameter = [&](initializer_list<const char*> names) -> optional<string> {
     if (const auto value = readParameterValue(product, names); value.has_value() && !looksLikePackagingType(*value)) {
@@ -921,7 +1043,7 @@ vector<Parameter> extractParameters(const JsonPtr& product) {
 
   for (const auto& entry : *entries) {
     const auto label = readFirstMember(entry, {"Parameter", "ParameterText"});
-    const auto value = readFirstMember(entry, {"Value", "ValueText", "ParameterValue"});
+    const auto value = readParameterText(entry, label.value_or(""));
     if (label.has_value() && value.has_value()) {
       auto labelText = trimCopy(*label);
       auto valueText = trimCopy(*value);
@@ -935,6 +1057,25 @@ vector<Parameter> extractParameters(const JsonPtr& product) {
   }
 
   return parameters;
+}
+
+void upsertExtractedInductance(vector<Parameter>& parameters, const string& value) {
+  const auto trimmed = trimCopy(value);
+  if (trimmed.empty() || !looksLikeInductanceValue(trimmed)) {
+    return;
+  }
+
+  for (auto& parameter : parameters) {
+    const auto label = normalizeParameterKey(parameter.name);
+    if (label.find("inductance") != string::npos) {
+      if (!looksLikeInductanceValue(parameter.value)) {
+        parameter.value = trimmed;
+      }
+      return;
+    }
+  }
+
+  parameters.push_back({"Inductance", trimmed});
 }
 
 optional<string> extractPackagingType(const JsonPtr& product) {
@@ -987,6 +1128,12 @@ DigiKeyProductDetails parseProductDetails(const string& lookupKey, const JsonPtr
   }
 
   details.parameters = extractParameters(productNode);
+  const auto combinedText = details.productDescription + " " + details.detailedDescription + " " +
+                            details.manufacturerPartNumber;
+  if (const auto inductance = extractInductanceFromText(combinedText); inductance.has_value()) {
+    upsertExtractedInductance(details.parameters, *inductance);
+  }
+
   if (!details.packageName.empty()) {
     const auto packageExists = any_of(details.parameters.begin(), details.parameters.end(), [](const Parameter& parameter) {
       return toLower(parameter.name) == "package" || toLower(parameter.name) == "package / case" ||

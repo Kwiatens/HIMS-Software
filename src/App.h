@@ -100,6 +100,7 @@ class App {
   ftxui::Element renderImportCsvUi() const;
   ftxui::Element renderSearchBarUi() const;
   ftxui::Element renderStatusBarUi() const;
+  ftxui::Element renderActionToolkitUi() const;
   ftxui::Element renderMessageUi() const;
   ftxui::Element renderPageUi() const;
 
@@ -204,6 +205,8 @@ class App {
   string deleteConfirmationItemId_;
   time_t deleteConfirmationUntil_ = 0;
   size_t printerSelection_ = 0;
+  time_t scannerFlashUntil_ = 0;
+  time_t printerFlashUntil_ = 0;
 };
 
 }  // namespace hims

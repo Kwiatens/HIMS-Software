@@ -35,6 +35,7 @@ struct AlertRow {
 struct DeviceStatus {
   string name;
   bool connected = false;
+  bool flashing = false;
   string endpoint;
   string lastActivity;
   string error;
@@ -56,7 +57,7 @@ struct DashboardSnapshot {
   float stockHealth = 1.0f;
   vector<AlertRow> stockWarnings;
   vector<DeviceStatus> devices;
-  vector<string> recentEvents;
+  vector<ActivityEntry> recentEvents;
 };
 
 struct ThresholdRule {
@@ -105,8 +106,9 @@ ftxui::Color statusColor(bool connected) {
   return connected ? uiSuccessColor() : uiDangerColor();
 }
 
-ftxui::Element statusChip(bool connected) {
-  const auto bg = connected ? ftxui::Color::RGB(18, 44, 28) : ftxui::Color::RGB(56, 24, 24);
+ftxui::Element statusChip(bool connected, bool flashing) {
+  const auto bg = flashing ? ftxui::Color::RGB(58, 42, 28)
+                           : (connected ? ftxui::Color::RGB(30, 30, 30) : ftxui::Color::RGB(44, 26, 20));
   return styledText(" " + statusLabel(connected) + " ", statusColor(connected), bg) | ftxui::bold;
 }
 
@@ -171,13 +173,13 @@ ftxui::Element ratioLine(const string& label, float ratio, ftxui::Color color) {
 ftxui::Element stockWarningRow(const AlertRow& row, size_t visibleIndex, bool flashing, int statusWidth,
                               int partWidth, int quantityWidth, int categoryWidth, int locationWidth) {
   const auto bg = stripedRowBg(visibleIndex);
-  const auto qtyBg = row.outOfStock ? (flashing ? ftxui::Color::RGB(72, 20, 28) : ftxui::Color::RGB(48, 18, 22))
-                                    : ftxui::Color::RGB(58, 44, 14);
+  const auto qtyBg = row.outOfStock ? (flashing ? ftxui::Color::RGB(76, 34, 22) : ftxui::Color::RGB(50, 24, 18))
+                                    : ftxui::Color::RGB(56, 42, 20);
   const auto qtyFg = row.outOfStock ? (flashing ? uiTitleColor() : uiDangerColor()) : uiWarnColor();
   const auto partFg = row.outOfStock ? uiDangerColor() : uiTitleColor();
   const auto statusLabel = row.outOfStock ? "OUT" : "LOW";
   const auto statusFg = row.outOfStock ? uiDangerColor() : uiWarnColor();
-  const auto statusBg = row.outOfStock ? ftxui::Color::RGB(56, 24, 24) : ftxui::Color::RGB(56, 42, 14);
+  const auto statusBg = row.outOfStock ? ftxui::Color::RGB(52, 28, 20) : ftxui::Color::RGB(54, 40, 18);
 
   return ftxui::hbox({
              fixedCell(statusLabel, statusWidth, statusFg, true) | ftxui::bgcolor(statusBg),
@@ -232,7 +234,7 @@ ftxui::Element deviceRow(const DeviceStatus& device) {
   body.push_back(ftxui::hbox({
       styledText(device.name, uiTitleColor()),
       ftxui::filler(),
-      statusChip(device.connected),
+      statusChip(device.connected, device.flashing),
   }));
   body.push_back(styledText(ellipsize(device.endpoint.empty() ? "-" : device.endpoint, 56), uiInfoColor()));
   body.push_back(styledText("last: " + ellipsize(device.lastActivity.empty() ? "n/a" : device.lastActivity, 56),
@@ -243,22 +245,39 @@ ftxui::Element deviceRow(const DeviceStatus& device) {
   return ftxui::vbox(move(body));
 }
 
-vector<string> recentEventLines(const vector<ActivityEntry>& activities) {
-  vector<string> lines;
-  const auto count = min<size_t>(activities.size(), 3);
+vector<ActivityEntry> recentEventEntries(const vector<ActivityEntry>& activities, size_t limit) {
+  vector<ActivityEntry> entries;
+  const auto count = min(activities.size(), limit);
   for (size_t offset = 0; offset < count; ++offset) {
-    const auto& entry = activities[activities.size() - 1 - offset];
-    const auto line = nowTimestampString(entry.timestamp) + "  " + entry.kind + "  " + entry.message;
-    lines.push_back(line);
+    entries.push_back(activities[activities.size() - 1 - offset]);
   }
-  return lines;
+  return entries;
+}
+
+ftxui::Color recentEventColor(const ActivityEntry& entry) {
+  if (entry.kind.find("scan") != string::npos) {
+    return uiLinkColor();
+  }
+  if (entry.kind.find("print") != string::npos) {
+    return uiAccentColor();
+  }
+  if (entry.kind.find("delete") != string::npos) {
+    return uiDangerColor();
+  }
+  if (entry.kind.find("edit") != string::npos) {
+    return uiInfoColor();
+  }
+  if (entry.kind.find("add") != string::npos) {
+    return uiSuccessColor();
+  }
+  return uiMutedColor();
 }
 
 DashboardSnapshot buildDashboardSnapshot(const vector<InventoryItem>& items, const vector<ActivityEntry>& activities,
-                                         bool scannerRunning, const string& scannerUrl) {
+                                         bool scannerRunning, const string& scannerUrl, size_t recentEventLimit) {
   DashboardSnapshot snapshot;
   snapshot.itemCount = items.size();
-  snapshot.recentEvents = recentEventLines(activities);
+  snapshot.recentEvents = recentEventEntries(activities, recentEventLimit);
 
   unordered_set<string> categories;
   unordered_set<string> locations;
@@ -320,10 +339,10 @@ DashboardSnapshot buildDashboardSnapshot(const vector<InventoryItem>& items, con
   }
 
   snapshot.devices = {
-      {"HIMS Scan", scannerRunning, scannerUrl,
+      {"HIMS Scan", scannerRunning, false, scannerUrl,
        snapshot.lastScannedPart.empty() ? "Waiting for scans" : snapshot.lastScannedPart,
        scannerRunning ? string() : "Scanner server is not running"},
-      {"Label Printer", false, "not configured", "No print jobs yet", "Printer integration pending"},
+      {"Label Printer", false, false, "not configured", "No print jobs yet", "Printer integration pending"},
   };
 
   sort(snapshot.stockWarnings.begin(), snapshot.stockWarnings.end(), [](const AlertRow& lhs, const AlertRow& rhs) {
@@ -346,10 +365,18 @@ string timestampOrDash(time_t value) {
 }  // namespace
 
 ftxui::Element App::renderDashboardUi() const {
-  auto snapshot = buildDashboardSnapshot(store_.items(), activities_, server_.running(), scannerUrl());
+  const auto now = time(nullptr);
+  const auto* activeScreen = ftxui::ScreenInteractive::Active();
+  const int screenWidth = activeScreen != nullptr ? activeScreen->dimx() : 120;
+  const int screenHeight = activeScreen != nullptr ? activeScreen->dimy() : 40;
+  const size_t recentEventLimit = static_cast<size_t>(max(8, screenHeight - 16));
+
+  auto snapshot = buildDashboardSnapshot(store_.items(), activities_, server_.running(), scannerUrl(),
+                                         recentEventLimit);
   if (snapshot.devices.size() > 1) {
     const auto configured = printerService_.configuredPrinterInfo();
     snapshot.devices[1].connected = printerCheck_.ok && configured.has_value();
+    snapshot.devices[1].flashing = now <= printerFlashUntil_;
     snapshot.devices[1].endpoint = configured ? configured->portName : printerService_.configuredPrinter();
     snapshot.devices[1].lastActivity = printerSummary();
     snapshot.devices[1].error = printerCheck_.ok
@@ -357,15 +384,16 @@ ftxui::Element App::renderDashboardUi() const {
                                     : (printerCheck_.message.empty() ? string("Printer is not ready")
                                                                       : printerCheck_.message);
   }
-  const auto* activeScreen = ftxui::ScreenInteractive::Active();
-  const int screenWidth = activeScreen != nullptr ? activeScreen->dimx() : 120;
-  const int screenHeight = activeScreen != nullptr ? activeScreen->dimy() : 40;
+  if (!snapshot.devices.empty()) {
+    snapshot.devices[0].flashing = now <= scannerFlashUntil_;
+  }
   const bool stackedLayout = screenWidth < 140;
 
   const int leftOuterWidth = stackedLayout ? max(48, screenWidth - 4)
                                            : clamp((screenWidth * 62) / 100, 78, screenWidth - 42);
   const int rightOuterWidth = stackedLayout ? max(48, screenWidth - 4) : max(34, screenWidth - leftOuterWidth - 1);
   const int leftInnerWidth = max(20, leftOuterWidth - 2);
+  const int recentEventWidth = max(26, rightOuterWidth - 4);
 
   const auto overviewPanel = panel(
       "Inventory overview",
@@ -412,8 +440,9 @@ ftxui::Element App::renderDashboardUi() const {
   if (snapshot.recentEvents.empty()) {
     recentActivityRows.push_back(styledText("No activity yet.", uiMutedColor()));
   } else {
-    for (const auto& line : snapshot.recentEvents) {
-      recentActivityRows.push_back(styledText(ellipsize(line, 72), uiMutedColor()));
+    for (const auto& entry : snapshot.recentEvents) {
+      const auto line = nowTimestampString(entry.timestamp) + "  " + entry.kind + "  " + entry.message;
+      recentActivityRows.push_back(styledText(ellipsize(line, recentEventWidth), recentEventColor(entry)));
     }
   }
   const auto recentEventsPanel = panel("Recent events", move(recentActivityRows), uiInfoColor(), uiPanelRightBg()) |

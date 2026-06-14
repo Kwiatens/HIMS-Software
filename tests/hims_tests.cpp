@@ -1,6 +1,7 @@
 #include "core/Inventory.h"
 #include "import/DigiKeyCsvImport.h"
 #include "label_printer/LabelPrinter.h"
+#include "ui/shared/AppUiShared.h"
 
 #include <cstdlib>
 #include <cassert>
@@ -208,17 +209,23 @@ int main() {
     item.parameters = {{"Resistance", "10k Ohm"}, {"Tolerance", "1%"}, {"Power Dissipation", "0.125W"}};
 
     const auto plan = service.buildLabelPlan(item);
-    assert(plan.categoryHeader == "RESISTORS" || plan.categoryHeader == "RESISTOR");
+    assert(plan.categoryHeader == "Resistor");
     assert(plan.mainValue.find("10k") != string::npos);
     assert(plan.mainValue.find(u8"\u03A9") != string::npos);
     assert(plan.packageLine.empty());
     assert(plan.manufacturerLine == "Yageo");
-    assert(plan.parameterLine1.find("Pwr") != string::npos);
-    assert(plan.parameterLine2.find("Tol") != string::npos);
+    assert(plan.parameterLine1.find("R ") != string::npos);
+    assert(plan.parameterLine1.find("10k") != string::npos);
+    assert(plan.parameterLine2.find("Pwr") != string::npos);
+    assert(plan.parameterLine3.empty());
     assert(plan.himsId == "HIMS:R-00123");
     const auto zpl = service.buildZpl(item);
     assert(!zpl.empty());
     assert(zpl.find("10kOhms") == string::npos);
+    assert(zpl.find("Tol ") == string::npos);
+    assert(zpl.find("Tempco") == string::npos);
+    assert(zpl.find("^FDResistor^FS") != string::npos);
+    assert(zpl.find("^FDPwr 0.125W^FS") != string::npos);
     assert(zpl.find("^FO10,100^A0N,16,16^FDYageo^FS") != string::npos);
 
     string error;
@@ -227,6 +234,91 @@ int main() {
     assert(backendPtr->lastPrinterName_ == "ZDesigner LP 2824 Plus (ZPL)");
     assert(backendPtr->lastJobName_.find("HIMS Label") == 0);
     assert(backendPtr->lastZpl_.find("^FDHIMS:R-00123^FS") != string::npos);
+
+    InventoryItem tvsDiode;
+    tvsDiode.id = "tvs-1";
+    tvsDiode.partName = "ESD clamp";
+    tvsDiode.manufacturer = "Littelfuse";
+    tvsDiode.category = "Transient Voltage Suppressors";
+    tvsDiode.parameters = {{"Voltage - Reverse Standoff (Typ)", "16V"},
+                           {"Voltage - Clamping (Max) @ Ipp", "26V"},
+                           {"Current - Peak Pulse (10/1000µs)", "23.1A"},
+                           {"Power - Peak Pulse", "600W"}};
+    const auto tvsPlan = service.buildLabelPlan(tvsDiode);
+    assert(tvsPlan.categoryHeader == "TVS Diode");
+    assert(tvsPlan.parameterLine1.find("Vst") != string::npos);
+    assert(tvsPlan.parameterLine2.find("Vc") != string::npos);
+    assert(tvsPlan.parameterLine3.find("Ipp") != string::npos);
+    assert(service.buildZpl(tvsDiode).find("^FDTVS Diode^FS") != string::npos);
+    assert(service.buildZpl(tvsDiode).find("^FDVst 16V^FS") != string::npos);
+    assert(service.buildZpl(tvsDiode).find("^FDVc 26V^FS") != string::npos);
+    assert(service.buildZpl(tvsDiode).find("^FDIpp 23.1A^FS") != string::npos);
+
+    InventoryItem protectionIc;
+    protectionIc.id = "prot-ic-1";
+    protectionIc.partName = "ESD protection array";
+    protectionIc.manufacturer = "Nexperia";
+    protectionIc.category = "Integrated Circuits";
+    protectionIc.parameters = {{"Function", "Protection"}, {"Type", "ESD"}};
+    const auto protectionPlan = service.buildLabelPlan(protectionIc);
+    assert(protectionPlan.categoryHeader == "Protection IC");
+    assert(service.buildZpl(protectionIc).find("^FDProtection IC^FS") != string::npos);
+
+    InventoryItem opAmp;
+    opAmp.id = "opamp-1";
+    opAmp.partName = "Dual op amp";
+    opAmp.manufacturer = "Texas Instruments";
+    opAmp.category = "Integrated Circuits";
+    opAmp.parameters = {{"Gain Bandwidth", "10MHz"}, {"Slew Rate", "5V/us"}};
+    const auto opAmpPlan = service.buildLabelPlan(opAmp);
+    assert(opAmpPlan.categoryHeader == "OP-AMP");
+    assert(service.buildZpl(opAmp).find("^FDOP-AMP^FS") != string::npos);
+
+    InventoryItem imu;
+    imu.id = "imu-1";
+    imu.partName = "3-axis IMU";
+    imu.manufacturer = "TDK InvenSense";
+    imu.category = "Sensors";
+    imu.parameters = {{"Sensor Type", "3-axis accelerometer / gyroscope"},
+                      {"Output", "I2C"},
+                      {"Voltage - Supply", "1.8V"},
+                      {"Resolution", "16bit"}};
+    const auto imuPlan = service.buildLabelPlan(imu);
+    assert(imuPlan.categoryHeader == "3 Axis IMU");
+    assert(imuPlan.parameterLine1.find("Type") != string::npos);
+    assert(imuPlan.parameterLine2.find("Out") != string::npos);
+    assert(imuPlan.parameterLine3.find("Vdd") != string::npos || imuPlan.parameterLine3.find("Res") != string::npos);
+    assert(service.buildZpl(imu).find("^FD3 Axis IMU^FS") != string::npos);
+
+    InventoryItem fallback;
+    fallback.id = "misc-1";
+    fallback.partName = "Prototype module";
+    fallback.manufacturer = "Acme";
+    fallback.category = "Misc / Prototype";
+    const auto fallbackPlan = service.buildLabelPlan(fallback);
+    assert(fallbackPlan.categoryHeader == "Misc");
+    assert(service.buildZpl(fallback).find("^FDMisc^FS") != string::npos);
+
+    InventoryItem inductor;
+    inductor.id = "ind-1";
+    inductor.partName = "RF inductor";
+    inductor.manufacturer = "Murata";
+    inductor.category = "Inductors";
+    inductor.notes = "FIXED IND 27NH 350MA 460 MOHM | DigiKey PN: 490-2628-1-ND";
+    inductor.parameters = {{"Value", "100MHz"}, {"Current Rating", "350mA"}, {"Frequency - Self Resonant", "1.7GHz"}};
+    const auto inductorFields = electricalFieldsForItem(inductor);
+    bool foundInductance = false;
+    for (const auto& field : inductorFields) {
+      assert(!(field.label.find("Inductance") != string::npos && field.value == "100MHz"));
+      if (field.label.find("Inductance") != string::npos) {
+        foundInductance = true;
+        assert(field.value == "27nH");
+      }
+    }
+    assert(foundInductance);
+    const auto inductorPlan = service.buildLabelPlan(inductor);
+    assert(inductorPlan.mainValue.find("100MHz") == string::npos);
+    assert(inductorPlan.mainValue.find("27nH") != string::npos);
   }
 
   {
@@ -254,10 +346,94 @@ int main() {
     assert(plan.mainValue == "STM32G0 demo board");
     assert(plan.packageLine.find("LQFP-64") != string::npos);
     assert(plan.manufacturerLine == "STMicroelectronics");
+    assert(plan.parameterLine1.find("Vdd") != string::npos);
     assert(plan.parameterLine1.find("3.3V") != string::npos);
+    assert(plan.parameterLine2.find("Core") != string::npos);
     assert(plan.parameterLine2.find("Cortex-M0+") != string::npos);
     assert(plan.parameterLine2.find("@") != string::npos);
+    assert(plan.parameterLine3.find("Flash") != string::npos);
     assert(plan.parameterLine3.find("128KB") != string::npos);
+  }
+
+  {
+    auto backend = make_unique<MockPrinterBackend>();
+    LabelPrinterService service(move(backend));
+    InventoryItem item;
+    item.id = "mosfet-1";
+    item.partName = "N-channel MOSFET";
+    item.manufacturer = "Alpha & Omega";
+    item.category = "MOSFETs";
+    item.himsId = "HIMS:T-00012";
+    item.parameters = {
+        {"Package / Case", "TO-263-3, D2PAK (2 Leads + Tab)"},
+        {"Drain-Source Voltage", "30V"},
+        {"Continuous Drain Current", "12A"},
+        {"Power - Max", "2W (Ta)"},
+    };
+
+    const auto plan = service.buildLabelPlan(item);
+    assert(plan.packageLine == "TO-263-3");
+    assert(plan.parameterLine1.find("Vds") != string::npos);
+    assert(plan.parameterLine1.find("30V") != string::npos);
+    assert(plan.parameterLine2.find("Id") != string::npos);
+    assert(plan.parameterLine2.find("12A") != string::npos);
+    assert(plan.parameterLine3.empty());
+
+    const auto zpl = service.buildZpl(item);
+    assert(zpl.find("2W (Ta)") == string::npos);
+    assert(zpl.find("TO-263-3,") == string::npos);
+    assert(zpl.find("^FO10,70^A0N,14,14^FDTO-263-3^FS") != string::npos);
+    assert(zpl.find("^FDVds 30V^FS") != string::npos);
+    assert(zpl.find("^FDId 12A^FS") != string::npos);
+  }
+
+  {
+    auto backend = make_unique<MockPrinterBackend>();
+    LabelPrinterService service(move(backend));
+
+    InventoryItem diode;
+    diode.id = "diode-1";
+    diode.partName = "SS14";
+    diode.manufacturer = "Diodes Inc.";
+    diode.category = "Schottky Diodes";
+    diode.parameters = {{"Forward Voltage", "0.38V"}, {"Reverse Voltage", "40V"}, {"Current", "1A"}};
+    const auto diodePlan = service.buildLabelPlan(diode);
+    assert(diodePlan.parameterLine1.find("Vf") != string::npos);
+    assert(diodePlan.parameterLine2.find("Vr") != string::npos);
+    assert(diodePlan.parameterLine3.find("Io") != string::npos);
+
+    InventoryItem connector;
+    connector.id = "conn-1";
+    connector.partName = "Board header";
+    connector.manufacturer = "Harwin";
+    connector.category = "Connectors";
+    connector.parameters = {{"Pins", "8"}, {"Connector Type", "Header"}, {"Pitch", "2.54mm"}, {"Rows", "2"}};
+    const auto connectorPlan = service.buildLabelPlan(connector);
+    assert(connectorPlan.parameterLine1.find("Pins") != string::npos);
+    assert(connectorPlan.parameterLine2.find("Conn") != string::npos);
+    assert(connectorPlan.parameterLine3.find("Rows") != string::npos);
+
+    InventoryItem regulator;
+    regulator.id = "reg-1";
+    regulator.partName = "3.3V LDO";
+    regulator.manufacturer = "Microchip";
+    regulator.category = "Voltage Regulators";
+    regulator.parameters = {{"Output Voltage", "3.3V"}, {"Voltage - Input", "5V"}, {"Output Current", "1A"}, {"Type", "LDO"}};
+    const auto regulatorPlan = service.buildLabelPlan(regulator);
+    assert(regulatorPlan.parameterLine1.find("Vout") != string::npos);
+    assert(regulatorPlan.parameterLine2.find("Vin") != string::npos);
+    assert(regulatorPlan.parameterLine3.find("Iout") != string::npos);
+
+    InventoryItem crystal;
+    crystal.id = "xtal-1";
+    crystal.partName = "16MHz crystal";
+    crystal.manufacturer = "Abracon";
+    crystal.category = "Crystals";
+    crystal.parameters = {{"Frequency", "16MHz"}, {"Load Capacitance", "18pF"}, {"ESR", "50Ohm"}};
+    const auto crystalPlan = service.buildLabelPlan(crystal);
+    assert(crystalPlan.parameterLine1.find("F") != string::npos);
+    assert(crystalPlan.parameterLine2.find("ESR") != string::npos ||
+           crystalPlan.parameterLine3.find("ESR") != string::npos);
   }
 
   {

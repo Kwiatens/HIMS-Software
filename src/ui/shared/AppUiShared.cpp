@@ -8,6 +8,7 @@
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#include <regex>
 #include <sstream>
 
 namespace hims {
@@ -15,55 +16,55 @@ namespace hims {
 using namespace std;
 
 ftxui::Color uiTitleColor() {
-  return ftxui::Color::RGB(98, 200, 255);
+  return ftxui::Color::RGB(242, 168, 92);
 }
 
 ftxui::Color uiAccentColor() {
-  return ftxui::Color::RGB(98, 200, 255);
+  return ftxui::Color::RGB(216, 132, 58);
 }
 
 ftxui::Color uiInfoColor() {
-  return ftxui::Color::RGB(98, 200, 255);
+  return ftxui::Color::RGB(220, 214, 206);
 }
 
 ftxui::Color uiSuccessColor() {
-  return ftxui::Color::RGB(98, 200, 255);
+  return ftxui::Color::RGB(238, 232, 224);
 }
 
 ftxui::Color uiLinkColor() {
-  return ftxui::Color::RGB(98, 200, 255);
+  return ftxui::Color::RGB(236, 180, 104);
 }
 
 ftxui::Color uiLabelColor() {
-  return ftxui::Color::RGB(98, 200, 255);
+  return ftxui::Color::RGB(190, 184, 176);
 }
 
 ftxui::Color uiWarnColor() {
-  return ftxui::Color::RGB(255, 190, 80);
+  return ftxui::Color::RGB(224, 154, 72);
 }
 
 ftxui::Color uiDangerColor() {
-  return ftxui::Color::RGB(255, 110, 120);
+  return ftxui::Color::RGB(190, 102, 78);
 }
 
 ftxui::Color uiMutedColor() {
-  return ftxui::Color::RGB(180, 180, 180);
+  return ftxui::Color::RGB(166, 162, 156);
 }
 
 ftxui::Color uiDimColor() {
-  return ftxui::Color::RGB(128, 128, 128);
+  return ftxui::Color::RGB(104, 100, 96);
 }
 
 ftxui::Color uiPanelLeftBg() {
-  return ftxui::Color::RGB(24, 24, 24);
+  return ftxui::Color::RGB(22, 22, 22);
 }
 
 ftxui::Color uiPanelRightBg() {
-  return ftxui::Color::RGB(24, 24, 24);
+  return ftxui::Color::RGB(25, 25, 25);
 }
 
 ftxui::Color uiRowDarkBg() {
-  return ftxui::Color::RGB(20, 20, 20);
+  return ftxui::Color::RGB(17, 17, 17);
 }
 
 ftxui::Color uiRowLightBg() {
@@ -71,7 +72,7 @@ ftxui::Color uiRowLightBg() {
 }
 
 ftxui::Color uiRowSelectedBg() {
-  return ftxui::Color::RGB(30, 60, 82);
+  return ftxui::Color::RGB(58, 42, 28);
 }
 
 string padRight(string value, int width) {
@@ -149,10 +150,10 @@ ftxui::Element panel(const string& title, ftxui::Elements body, optional<ftxui::
 
 ftxui::Element quantityBadge(int quantity, bool selected) {
   const auto fg = quantity <= 0 ? uiDangerColor() : (quantity <= 5 ? uiWarnColor() : uiSuccessColor());
-  const auto bg = selected ? ftxui::Color::RGB(18, 18, 18)
-                           : (quantity <= 0 ? ftxui::Color::RGB(52, 22, 22)
-                                            : (quantity <= 5 ? ftxui::Color::RGB(58, 42, 14)
-                                                             : ftxui::Color::RGB(18, 44, 28)));
+  const auto bg = selected ? uiRowSelectedBg()
+                           : (quantity <= 0 ? ftxui::Color::RGB(42, 24, 20)
+                                            : (quantity <= 5 ? ftxui::Color::RGB(52, 38, 20)
+                                                             : ftxui::Color::RGB(24, 24, 24)));
   return ftxui::text(" QTY " + to_string(quantity) + " ") | ftxui::bold | ftxui::color(fg) | ftxui::bgcolor(bg);
 }
 
@@ -334,6 +335,53 @@ bool looksLikePackagingValue(const string& value) {
   });
 }
 
+bool looksLikeFrequencyValue(const string& value) {
+  return normalizeKey(value).find("hz") != string::npos;
+}
+
+bool looksLikeInductanceValue(const string& value) {
+  const auto normalized = normalizeKey(value);
+  if (normalized.empty() || looksLikeFrequencyValue(value)) {
+    return false;
+  }
+  if (normalized.find("uh") != string::npos || normalized.find("nh") != string::npos ||
+      normalized.find("ph") != string::npos || normalized.find("henry") != string::npos) {
+    return true;
+  }
+  return normalized.find_first_of("0123456789") != string::npos && normalized.back() == 'h';
+}
+
+string canonicalInductanceUnit(string unit) {
+  transform(unit.begin(), unit.end(), unit.begin(), [](unsigned char ch) {
+    return static_cast<char>(tolower(ch));
+  });
+  if (unit == "uh") {
+    return "uH";
+  }
+  if (unit == "nh") {
+    return "nH";
+  }
+  if (unit == "mh") {
+    return "mH";
+  }
+  if (unit == "ph") {
+    return "pH";
+  }
+  return "H";
+}
+
+optional<string> extractInductanceFromText(const string& text) {
+  regex valuePattern(R"(\b(\d+(?:\.\d+)?|\d+[rR]\d+)\s*([munp]?h)\b)", regex_constants::icase);
+  smatch match;
+  if (regex_search(text, match, valuePattern) && match.size() > 2) {
+    auto number = match[1].str();
+    replace(number.begin(), number.end(), 'R', '.');
+    replace(number.begin(), number.end(), 'r', '.');
+    return number + canonicalInductanceUnit(match[2].str());
+  }
+  return nullopt;
+}
+
 const Parameter* findParameter(const vector<Parameter>& parameters, initializer_list<const char*> names) {
   for (const auto* name : names) {
     for (const auto& parameter : parameters) {
@@ -343,6 +391,29 @@ const Parameter* findParameter(const vector<Parameter>& parameters, initializer_
     }
   }
   return nullptr;
+}
+
+optional<string> parameterValueMatching(const InventoryItem& item, initializer_list<const char*> names,
+                                        bool (*predicate)(const string&)) {
+  for (const auto* name : names) {
+    for (const auto& parameter : item.parameters) {
+      if (!parameterLabelMatches(parameter.name, name)) {
+        continue;
+      }
+      const auto value = trim(parameter.value);
+      if (!value.empty() && !looksLikePackagingValue(value) && predicate(value)) {
+        return value;
+      }
+    }
+  }
+  return nullopt;
+}
+
+optional<string> inferredInductanceValue(const InventoryItem& item) {
+  if (const auto value = parameterValueMatching(item, {"Inductance", "Value"}, looksLikeInductanceValue)) {
+    return value;
+  }
+  return extractInductanceFromText(item.notes + " " + item.partName + " " + item.sku);
 }
 
 optional<string> parameterValue(const InventoryItem& item, initializer_list<const char*> names) {
@@ -457,7 +528,7 @@ vector<DetailField> electricalFieldsForItem(const InventoryItem& item) {
   }
 
   if (categoryContains(item, {"inductor", "choke", "coil"})) {
-    addValueAndPackage("Inductance", parameterValue(item, {"Inductance", "Value"}), package);
+    addValueAndPackage("Inductance", inferredInductanceValue(item), package);
     addField("Current Rating", parameterValue(item, {"Current Rating", "Current Rating (Amps)", "Current"}));
     addField("DC Resistance", parameterValue(item, {"DC Resistance", "DC Resistance (DCR)", "DCR"}));
     addField("Saturation Current", parameterValue(item, {"Saturation Current", "Current - Saturation (Isat)"}));

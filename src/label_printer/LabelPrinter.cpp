@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <regex>
 #include <sstream>
 
 #ifdef _WIN32
@@ -113,6 +114,186 @@ string lowerAscii(string value) {
 
 string shortCode(const string& value, size_t maxLength = 14) {
   return ellipsize(trim(value), maxLength);
+}
+
+string fieldOrBlank(const string& value, size_t maxLength);
+
+string shortParameterLabel(const string& label) {
+  const auto key = normalizeKey(label);
+  if (key.empty()) {
+    return {};
+  }
+
+  if (key.find("capacitance") != string::npos || key == "value") {
+    return "C";
+  }
+  if (key.find("resistance") != string::npos) {
+    return "R";
+  }
+  if (key.find("inductance") != string::npos) {
+    return "L";
+  }
+  if (key.find("power") != string::npos || key.find("watts") != string::npos) {
+    return "Pwr";
+  }
+  if (key.find("reversevoltage") != string::npos || key == "vr") {
+    return "Vr";
+  }
+  if (key.find("operatingvoltage") != string::npos || key.find("voltagerated") != string::npos ||
+      key.find("ratedvoltage") != string::npos) {
+    return "Vr";
+  }
+  if (key.find("voltagesupply") != string::npos || key == "voltage") {
+    return "Vdd";
+  }
+  if (key.find("voltageoutput") != string::npos || key == "vout") {
+    return "Vout";
+  }
+  if (key.find("voltageinput") != string::npos || key == "vin") {
+    return "Vin";
+  }
+  if (key.find("forwardvoltage") != string::npos || key == "vf") {
+    return "Vf";
+  }
+  if (key.find("reversestandoff") != string::npos) {
+    return "Vst";
+  }
+  if (key.find("breakdown") != string::npos) {
+    return "Vbr";
+  }
+  if (key.find("clamping") != string::npos) {
+    return "Vc";
+  }
+  if (key.find("currentpeakpulse") != string::npos || key.find("peakpulsecurrent") != string::npos) {
+    return "Ipp";
+  }
+  if (key.find("peakpulsepower") != string::npos) {
+    return "Ppp";
+  }
+  if (key.find("saturationcurrent") != string::npos || key.find("isat") != string::npos) {
+    return "Isat";
+  }
+  if (key.find("currentrating") != string::npos || key == "current") {
+    return "I";
+  }
+  if (key.find("currentcontinuousdrain") != string::npos || key == "id") {
+    return "Id";
+  }
+  if (key.find("collectoremittervoltage") != string::npos || key == "vce" || key == "vceo") {
+    return "Vce";
+  }
+  if (key.find("collectorcurrent") != string::npos || key == "ic") {
+    return "Ic";
+  }
+  if (key.find("drainsourcevoltage") != string::npos || key == "vdss" || key == "vds") {
+    return "Vds";
+  }
+  if (key.find("rdson") != string::npos) {
+    return "Rds";
+  }
+  if (key.find("gatecharge") != string::npos || key == "qg") {
+    return "Qg";
+  }
+  if (key == "hfe" || key.find("dccurrentgain") != string::npos) {
+    return "hFE";
+  }
+  if (key.find("frequency") != string::npos) {
+    return "F";
+  }
+  if (key.find("loadcapacitance") != string::npos) {
+    return "CL";
+  }
+  if (key.find("operatingmode") != string::npos) {
+    return "Mode";
+  }
+  if (key.find("temperature") != string::npos) {
+    return "Temp";
+  }
+  if (key.find("sensortype") != string::npos || key == "type") {
+    return "Type";
+  }
+  if (key.find("outputtype") != string::npos || key == "output") {
+    return "Out";
+  }
+  if (key.find("resolution") != string::npos) {
+    return "Res";
+  }
+  if (key.find("accuracy") != string::npos) {
+    return "Acc";
+  }
+  if (key.find("features") != string::npos) {
+    return "Feat";
+  }
+  if (key.find("pins") != string::npos || key.find("numberofpositions") != string::npos || key.find("pincount") != string::npos) {
+    return "Pins";
+  }
+  if (key.find("connector") != string::npos) {
+    return "Conn";
+  }
+  if (key.find("rows") != string::npos) {
+    return "Rows";
+  }
+  if (key.find("pitch") != string::npos) {
+    return "Pitch";
+  }
+  if (key.find("shielding") != string::npos) {
+    return "Shield";
+  }
+  if (key.find("composition") != string::npos) {
+    return "Comp";
+  }
+  if (key.find("temperaturecoefficient") != string::npos || key.find("tempco") != string::npos) {
+    return "Tempco";
+  }
+  if (key.find("coreprocessor") != string::npos || key == "core") {
+    return "Core";
+  }
+  if (key.find("clockspeed") != string::npos || key.find("clockfrequency") != string::npos || key == "speed") {
+    return "Clk";
+  }
+  if (key == "flash" || key.find("programmemorysize") != string::npos) {
+    return "Flash";
+  }
+  if (key == "ram" || key == "memory") {
+    return "RAM";
+  }
+  if (key.find("package") != string::npos) {
+    return "Pkg";
+  }
+
+  return trim(label);
+}
+
+string shortValueLine(const string& label, optional<string> value, size_t maxLength = 24) {
+  if (!value) {
+    return {};
+  }
+
+  const auto cleaned = trim(*value);
+  if (cleaned.empty()) {
+    return {};
+  }
+
+  const auto shortLabel = shortParameterLabel(label);
+  if (shortLabel.empty()) {
+    return fieldOrBlank(cleaned, maxLength);
+  }
+
+  return fieldOrBlank(shortLabel + " " + cleaned, maxLength);
+}
+
+string compactDescriptor(const string& value, size_t maxLength = 10) {
+  auto cleaned = trim(value);
+  if (cleaned.empty()) {
+    return {};
+  }
+
+  const auto cut = cleaned.find_first_of(",;(/");
+  if (cut != string::npos) {
+    cleaned = trim(cleaned.substr(0, cut));
+  }
+
+  return ellipsize(cleaned, maxLength);
 }
 
 string dateOnly(time_t value) {
@@ -284,19 +465,215 @@ string collectLineFromValues(initializer_list<string> values, const string& sepa
   return fieldOrBlank(join(parts, separator.empty() ? ' ' : separator.front()), maxLength);
 }
 
-bool containsTag(const InventoryItem& item, initializer_list<const char*> needles) {
-  for (const auto& tag : item.tags) {
-    for (const auto* needle : needles) {
-      if (containsInsensitive(tag, needle)) {
-        return true;
+bool looksLikeFrequencyValue(const string& value) {
+  return normalizeKey(value).find("hz") != string::npos;
+}
+
+bool looksLikeInductanceValue(const string& value) {
+  const auto normalized = normalizeKey(value);
+  if (normalized.empty() || looksLikeFrequencyValue(value)) {
+    return false;
+  }
+  if (normalized.find("uh") != string::npos || normalized.find("nh") != string::npos ||
+      normalized.find("ph") != string::npos || normalized.find("henry") != string::npos) {
+    return true;
+  }
+  return normalized.find_first_of("0123456789") != string::npos && normalized.back() == 'h';
+}
+
+string canonicalInductanceUnit(string unit) {
+  transform(unit.begin(), unit.end(), unit.begin(), [](unsigned char ch) {
+    return static_cast<char>(tolower(ch));
+  });
+  if (unit == "uh") {
+    return "uH";
+  }
+  if (unit == "nh") {
+    return "nH";
+  }
+  if (unit == "mh") {
+    return "mH";
+  }
+  if (unit == "ph") {
+    return "pH";
+  }
+  return "H";
+}
+
+optional<string> extractInductanceFromText(const string& text) {
+  regex valuePattern(R"(\b(\d+(?:\.\d+)?|\d+[rR]\d+)\s*([munp]?h)\b)", regex_constants::icase);
+  smatch match;
+  if (regex_search(text, match, valuePattern) && match.size() > 2) {
+    auto number = match[1].str();
+    replace(number.begin(), number.end(), 'R', '.');
+    replace(number.begin(), number.end(), 'r', '.');
+    return number + canonicalInductanceUnit(match[2].str());
+  }
+  return nullopt;
+}
+
+optional<string> parameterValueMatching(const InventoryItem& item, initializer_list<const char*> names,
+                                        bool (*predicate)(const string&)) {
+  for (const auto* name : names) {
+    for (const auto& parameter : item.parameters) {
+      if (!parameterLabelMatches(parameter.name, name)) {
+        continue;
+      }
+      const auto value = trim(parameter.value);
+      if (!value.empty() && !looksLikePackagingValue(value) && predicate(value)) {
+        return value;
       }
     }
   }
-  return false;
+  return nullopt;
 }
 
 optional<string> firstParameter(const InventoryItem& item, initializer_list<const char*> names) {
   return parameterValue(item, names);
+}
+
+optional<string> firstInductanceParameter(const InventoryItem& item) {
+  if (const auto value = parameterValueMatching(item, {"Inductance", "Value"}, looksLikeInductanceValue)) {
+    return value;
+  }
+  return extractInductanceFromText(item.notes + " " + item.partName + " " + item.sku);
+}
+
+bool itemTextContains(const InventoryItem& item, initializer_list<const char*> needles) {
+  const auto textMatches = [&](const string& text) {
+    for (const auto* needle : needles) {
+      if (containsInsensitive(text, needle)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (textMatches(item.category) || textMatches(displayCategory(item.category)) || textMatches(item.partName) ||
+      textMatches(item.manufacturer) || textMatches(item.location) || textMatches(item.notes) ||
+      textMatches(item.digikeyPartNumber) || textMatches(item.sku)) {
+    return true;
+  }
+
+  for (const auto& tag : item.tags) {
+    if (textMatches(tag)) {
+      return true;
+    }
+  }
+
+  for (const auto& parameter : item.parameters) {
+    if (textMatches(parameter.name) || textMatches(parameter.value)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool hasParameter(const InventoryItem& item, initializer_list<const char*> names) {
+  return findParameter(item.parameters, names) != nullptr;
+}
+
+string sensorContextHeader(const InventoryItem& item) {
+  if (itemTextContains(item, {"3 axis", "3-axis", "three axis", "imu", "inertial measurement unit"}) ||
+      (itemTextContains(item, {"accelerometer"}) && itemTextContains(item, {"gyroscope", "gyro"}))) {
+    return "3 Axis IMU";
+  }
+  if (itemTextContains(item, {"temperature", "temp"})) {
+    return "Temp Sensor";
+  }
+  if (itemTextContains(item, {"pressure"})) {
+    return "Pressure Sensor";
+  }
+  if (itemTextContains(item, {"humidity"})) {
+    return "Humidity Sensor";
+  }
+  if (itemTextContains(item, {"accelerometer", "accel"})) {
+    return "Accelerometer";
+  }
+  if (itemTextContains(item, {"gyroscope", "gyro"})) {
+    return "Gyroscope";
+  }
+  if (itemTextContains(item, {"magnetometer"})) {
+    return "Magnetometer";
+  }
+  return {};
+}
+
+string diodeContextHeader(const InventoryItem& item) {
+  if (itemTextContains(item, {"tvs", "transient voltage suppressor", "esd protection", "surge protection"})) {
+    return "TVS Diode";
+  }
+  if (itemTextContains(item, {"schottky"})) {
+    return "Schottky Diode";
+  }
+  if (itemTextContains(item, {"rectifier"})) {
+    return "Rectifier Diode";
+  }
+  if (itemTextContains(item, {"zener"})) {
+    return "Zener Diode";
+  }
+  return "Diode";
+}
+
+string integratedCircuitContextHeader(const InventoryItem& item) {
+  if (itemTextContains(item, {"op amp", "operational amplifier", "operational amp"}) ||
+      itemTextContains(item, {"gain bandwidth", "slew rate", "input offset voltage", "rail-to-rail",
+                              "common-mode rejection"})) {
+    return "OP-AMP";
+  }
+  if (itemTextContains(item, {"comparator"})) {
+    return "Comparator";
+  }
+  if (itemTextContains(item, {"protection ic", "protection array", "esd protection", "surge protection",
+                              "overvoltage protection"}) ||
+      itemTextContains(item, {"protection"}) && itemTextContains(item, {"ic", "integrated circuit"})) {
+    return "Protection IC";
+  }
+  if (itemTextContains(item, {"memory", "flash", "eeprom", "sram", "rom"}) ||
+      hasParameter(item, {"Memory Type", "Memory Format", "Memory Size", "Program Memory Size",
+                          "Program Memory Type"})) {
+    return "Memory IC";
+  }
+  if (itemTextContains(item, {"regulator", "voltage regulator", "power management", "buck", "boost",
+                              "low dropout", "ldo", "dc-dc", "step-down", "step-up"})) {
+    return "Regulator";
+  }
+  if (itemTextContains(item, {"sensor", "imu", "accelerometer", "gyroscope", "gyro"})) {
+    const auto sensor = sensorContextHeader(item);
+    if (!sensor.empty()) {
+      return sensor;
+    }
+    return "Sensor IC";
+  }
+  if (itemTextContains(item, {"driver", "transceiver", "interface"})) {
+    return "Interface IC";
+  }
+  return {};
+}
+
+string transistorContextHeader(const InventoryItem& item) {
+  if (itemTextContains(item, {"mosfet", "fet"})) {
+    return "MOSFET";
+  }
+  if (itemTextContains(item, {"bjt", "npn", "pnp", "transistor"})) {
+    return "Transistor";
+  }
+  return "Transistor";
+}
+
+string fallbackContextHeader(const InventoryItem& item) {
+  const auto category = trim(displayCategory(item.category));
+  if (!category.empty()) {
+    return category;
+  }
+  if (!trim(item.partName).empty()) {
+    return trim(item.partName);
+  }
+  if (!trim(item.sku).empty()) {
+    return trim(item.sku);
+  }
+  return "Part";
 }
 
 string mainLabelValue(const InventoryItem& item) {
@@ -311,7 +688,7 @@ string mainLabelValue(const InventoryItem& item) {
                                  " ", 24);
   }
   if (categoryContains(item, {"inductor", "choke", "coil"})) {
-    return collectLineFromValues({firstParameter(item, {"Inductance", "Value"}).value_or({}),
+    return collectLineFromValues({firstInductanceParameter(item).value_or({}),
                                   firstParameter(item, {"Current Rating", "Current"}).value_or({})},
                                  " ", 24);
   }
@@ -329,7 +706,13 @@ string shortPackageLine(const InventoryItem& item) {
   const auto package = firstParameter(item, {"Package / Case", "Package Case", "Case / Package", "Case Package",
                                              "Supplier Device Package", "Device Package", "Package"});
   const auto size = firstParameter(item, {"Size / Dimension", "Dimensions"});
-  return collectLineFromValues({package.value_or({}), size.value_or({})}, " / ", 24);
+  if (package && !trim(*package).empty()) {
+    return fieldOrBlank(compactDescriptor(*package), 10);
+  }
+  if (size && !trim(*size).empty()) {
+    return fieldOrBlank(compactDescriptor(*size), 10);
+  }
+  return {};
 }
 
 string manufacturerLine(const InventoryItem& item) {
@@ -375,7 +758,7 @@ vector<string> fallbackDetailLines(const InventoryItem& item, size_t maxLines) {
     if (containsInsensitive(field.label, "package")) {
       continue;
     }
-    lines.push_back(fitSingleLineLabel(value, 24));
+    lines.push_back(shortValueLine(field.label, value, 24));
     if (lines.size() >= maxLines) {
       break;
     }
@@ -387,46 +770,51 @@ vector<string> parameterLinesForItem(const InventoryItem& item) {
   vector<string> lines;
 
   if (categoryContains(item, {"capacitor"})) {
+    if (const auto capacitance = firstParameter(item, {"Capacitance", "Value"})) {
+      lines.push_back(shortValueLine("Capacitance", capacitance, 24));
+    }
     if (const auto voltage = firstParameter(item, {"Operating Voltage", "Voltage", "Voltage - Rated", "Rated Voltage"})) {
-      lines.push_back(fitSingleLineLabel("V " + trim(*voltage), 24));
+      lines.push_back(shortValueLine("Operating Voltage", voltage, 24));
     }
     if (const auto dielectric = firstParameter(item, {"Type", "Dielectric", "Dielectric Type"})) {
-      lines.push_back(fitSingleLineLabel(trim(*dielectric), 24));
+      lines.push_back(shortValueLine("Type", dielectric, 24));
     }
-    if (const auto tolerance = firstParameter(item, {"Tolerance"})) {
-      lines.push_back(fitSingleLineLabel("Tol " + trim(*tolerance), 24));
-    } else if (const auto esr = firstParameter(item, {"ESR", "ESR (Equivalent Series Resistance)"})) {
-      lines.push_back(fitSingleLineLabel("ESR " + trim(*esr), 24));
+    if (const auto esr = firstParameter(item, {"ESR", "ESR (Equivalent Series Resistance)"})) {
+      lines.push_back(shortValueLine("ESR", esr, 24));
     }
     return lines;
   }
 
   if (categoryContains(item, {"resistor"})) {
+    if (const auto resistance = firstParameter(item, {"Resistance", "Value"})) {
+      lines.push_back(shortValueLine("Resistance", resistance, 24));
+    }
     if (const auto power = firstParameter(item, {"Power Dissipation", "Power (Watts)", "Power Rating", "Power",
                                                  "Power - Max", "Watts"})) {
-      lines.push_back(fitSingleLineLabel("Pwr " + trim(*power), 24));
+      lines.push_back(shortValueLine("Power", power, 24));
     }
-    if (const auto tolerance = firstParameter(item, {"Tolerance"})) {
-      lines.push_back(fitSingleLineLabel("Tol " + trim(*tolerance), 24));
+    if (const auto composition = firstParameter(item, {"Composition"})) {
+      lines.push_back(shortValueLine("Composition", composition, 24));
     }
     if (const auto tempco = firstParameter(item, {"Temperature Coefficient", "Tempco"})) {
-      lines.push_back(fitSingleLineLabel("Tempco " + trim(*tempco), 24));
-    } else if (const auto size = firstParameter(item, {"Size / Dimension"})) {
-      lines.push_back(fitSingleLineLabel(trim(*size), 24));
+      lines.push_back(shortValueLine("Tempco", tempco, 24));
     }
     return lines;
   }
 
   if (categoryContains(item, {"inductor", "choke", "coil"})) {
+    if (const auto inductance = firstInductanceParameter(item)) {
+      lines.push_back(shortValueLine("Inductance", inductance, 24));
+    }
     if (const auto current = firstParameter(item, {"Current Rating", "Current Rating (Amps)", "Current"})) {
-      lines.push_back(fitSingleLineLabel("I " + trim(*current), 24));
+      lines.push_back(shortValueLine("Current Rating", current, 24));
     }
     if (const auto saturation = firstParameter(item, {"Saturation Current", "Current - Saturation (Isat)"})) {
-      lines.push_back(fitSingleLineLabel("Isat " + trim(*saturation), 24));
+      lines.push_back(shortValueLine("Saturation Current", saturation, 24));
     }
     string frequencyLine;
     if (const auto frequency = firstParameter(item, {"Frequency - Self Resonant", "Frequency"})) {
-      frequencyLine = trim(*frequency);
+      frequencyLine = shortParameterLabel("Frequency") + " " + trim(*frequency);
     }
     const auto shielded = normalizedShieldingLine(firstParameter(item, {"Shielding"}));
     if (!shielded.empty()) {
@@ -443,7 +831,7 @@ vector<string> parameterLinesForItem(const InventoryItem& item) {
 
   if (categoryContains(item, {"mcu", "microcontroller"})) {
     if (const auto voltage = firstParameter(item, {"Operating Voltage", "Voltage - Supply", "Voltage - Supply (Min/Max)", "Voltage"})) {
-      lines.push_back(fitSingleLineLabel("V " + trim(*voltage), 24));
+      lines.push_back(shortValueLine("Voltage - Supply", voltage, 24));
     }
 
     string coreLine;
@@ -457,18 +845,18 @@ vector<string> parameterLinesForItem(const InventoryItem& item) {
       coreLine += trim(*clock);
     }
     if (!coreLine.empty()) {
-      lines.push_back(fitSingleLineLabel(coreLine, 24));
+      lines.push_back(fitSingleLineLabel("Core " + coreLine, 24));
     }
 
     string memoryLine;
     if (const auto flash = firstParameter(item, {"Flash", "Program Memory Size"})) {
-      memoryLine = trim(*flash);
+      memoryLine = "Flash " + trim(*flash);
     }
     if (const auto ram = firstParameter(item, {"RAM", "Memory"})) {
       if (!memoryLine.empty()) {
         memoryLine += " / ";
       }
-      memoryLine += trim(*ram);
+      memoryLine += "RAM " + trim(*ram);
     }
     if (!memoryLine.empty()) {
       lines.push_back(fitSingleLineLabel(memoryLine, 24));
@@ -479,36 +867,138 @@ vector<string> parameterLinesForItem(const InventoryItem& item) {
   if (categoryContains(item, {"transistor", "mosfet", "fet", "discrete semiconductor"})) {
     if (categoryContains(item, {"mosfet", "fet"})) {
       if (const auto drainSource = firstParameter(item, {"Drain-Source Voltage", "Drain to Source Voltage (Vdss)", "Vds", "Vdss"})) {
-        lines.push_back(fitSingleLineLabel("Vds " + trim(*drainSource), 24));
+        lines.push_back(shortValueLine("Vds", drainSource, 24));
       }
       if (const auto current = firstParameter(item, {"Continuous Drain Current", "Current - Continuous Drain (Id) @ 25°C", "Current", "Id"})) {
-        lines.push_back(fitSingleLineLabel("Id " + trim(*current), 24));
+        lines.push_back(shortValueLine("Id", current, 24));
       }
       vector<string> thirdLine;
       if (const auto rds = firstParameter(item, {"Rds On", "Rds On (Max) @ Id, Vgs", "RDS(ON)"})) {
-        thirdLine.push_back("Rds " + trim(*rds));
+        thirdLine.push_back(shortValueLine("Rds", rds, 24));
       }
       if (const auto gateCharge = firstParameter(item, {"Gate Charge", "Gate Charge (Qg) (Max) @ Vgs"})) {
-        thirdLine.push_back("Qg " + trim(*gateCharge));
+        thirdLine.push_back(shortValueLine("Qg", gateCharge, 24));
       }
       if (!thirdLine.empty()) {
-        lines.push_back(fitSingleLineLabel(join(thirdLine, '/'), 24));
+        if (thirdLine.size() == 1) {
+          lines.push_back(thirdLine[0]);
+        } else {
+          lines.push_back(fitSingleLineLabel(thirdLine[0] + " / " + thirdLine[1], 24));
+        }
       }
       return lines;
     }
 
     if (const auto collectorEmitter = firstParameter(item, {"Collector-Emitter Voltage", "Collector Emitter Voltage", "Vce", "Vceo"})) {
-      lines.push_back(fitSingleLineLabel("Vce " + trim(*collectorEmitter), 24));
+      lines.push_back(shortValueLine("Vce", collectorEmitter, 24));
     } else if (const auto voltage = firstParameter(item, {"Voltage", "Voltage - Collector Emitter", "Voltage - CE", "Vceo"})) {
-      lines.push_back(fitSingleLineLabel(trim(*voltage), 24));
+      lines.push_back(shortValueLine("Vce", voltage, 24));
     }
     if (const auto current = firstParameter(item, {"Collector Current", "Current", "Ic", "Continuous Collector Current"})) {
-      lines.push_back(fitSingleLineLabel("Ic " + trim(*current), 24));
+      lines.push_back(shortValueLine("Ic", current, 24));
     }
     if (const auto gain = firstParameter(item, {"hFE", "DC Current Gain", "Gain"})) {
-      lines.push_back(fitSingleLineLabel("hFE " + trim(*gain), 24));
-    } else if (const auto power = firstParameter(item, {"Power - Max", "Power"})) {
-      lines.push_back(fitSingleLineLabel("Pwr " + trim(*power), 24));
+      lines.push_back(shortValueLine("hFE", gain, 24));
+    }
+    return lines;
+  }
+
+  if (categoryContains(item, {"diode", "rectifier", "schottky"}) || itemTextContains(item, {"diode", "rectifier", "schottky"})) {
+    if (const auto forward = firstParameter(item, {"Forward Voltage", "Voltage - Forward (Vf) (Max) @ If", "Vf"})) {
+      lines.push_back(shortValueLine("Vf", forward, 24));
+    }
+    if (const auto reverse = firstParameter(item, {"Reverse Voltage", "Voltage - DC Reverse (Vr) (Max)", "Peak Reverse Voltage", "Vr"})) {
+      lines.push_back(shortValueLine("Vr", reverse, 24));
+    }
+    if (const auto current = firstParameter(item, {"Current", "Current - Average Rectified (Io)", "If", "Forward Current"})) {
+      lines.push_back(shortValueLine("Io", current, 24));
+    }
+    if (const auto technology = firstParameter(item, {"Technology"})) {
+      lines.push_back(shortValueLine("Tech", technology, 24));
+    }
+    return lines;
+  }
+
+  if (categoryContains(item, {"connector"}) || itemTextContains(item, {"connector"})) {
+    if (const auto pins = firstParameter(item, {"Pins", "Number of Positions", "Pin Count"})) {
+      lines.push_back(shortValueLine("Pins", pins, 24));
+    }
+    if (const auto connectorType = firstParameter(item, {"Connector Type"})) {
+      lines.push_back(shortValueLine("Conn", connectorType, 24));
+    }
+    if (const auto rows = firstParameter(item, {"Rows", "Number of Rows"})) {
+      lines.push_back(shortValueLine("Rows", rows, 24));
+    }
+    if (const auto pitch = firstParameter(item, {"Pitch", "Pitch - Mating"})) {
+      lines.push_back(shortValueLine("Pitch", pitch, 24));
+    }
+    return lines;
+  }
+
+  if (categoryContains(item, {"regulator", "voltage regulator", "power management"}) ||
+      itemTextContains(item, {"regulator", "ldo", "buck", "boost"})) {
+    if (const auto outputVoltage = firstParameter(item, {"Output Voltage", "Voltage - Output", "Vout"})) {
+      lines.push_back(shortValueLine("Vout", outputVoltage, 24));
+    }
+    if (const auto inputVoltage = firstParameter(item, {"Voltage - Input", "Vin"})) {
+      lines.push_back(shortValueLine("Vin", inputVoltage, 24));
+    }
+    if (const auto current = firstParameter(item, {"Output Current", "Current - Output", "Iout"})) {
+      lines.push_back(shortValueLine("Iout", current, 24));
+    }
+    if (const auto type = firstParameter(item, {"Type", "Output Type"})) {
+      lines.push_back(shortValueLine("Type", type, 24));
+    }
+    return lines;
+  }
+
+  if (categoryContains(item, {"crystal", "oscillator", "resonator"}) ||
+      itemTextContains(item, {"crystal", "oscillator", "resonator"})) {
+    if (const auto frequency = firstParameter(item, {"Frequency"})) {
+      lines.push_back(shortValueLine("Frequency", frequency, 24));
+    }
+    if (const auto loadCapacitance = firstParameter(item, {"Load Capacitance"})) {
+      lines.push_back(shortValueLine("Load Capacitance", loadCapacitance, 24));
+    }
+    if (const auto esr = firstParameter(item, {"ESR", "Equivalent Series Resistance"})) {
+      lines.push_back(shortValueLine("ESR", esr, 24));
+    }
+    return lines;
+  }
+
+  if (categoryContains(item, {"sensor", "temperature sensor", "pressure sensor"}) ||
+      itemTextContains(item, {"sensor", "imu"})) {
+    if (const auto type = firstParameter(item, {"Type", "Sensor Type"})) {
+      lines.push_back(shortValueLine("Type", type, 24));
+    }
+    if (const auto output = firstParameter(item, {"Output", "Output Type"})) {
+      lines.push_back(shortValueLine("Out", output, 24));
+    }
+    if (const auto voltage = firstParameter(item, {"Voltage - Supply"})) {
+      lines.push_back(shortValueLine("Vdd", voltage, 24));
+    }
+    if (const auto resolution = firstParameter(item, {"Resolution"})) {
+      lines.push_back(shortValueLine("Res", resolution, 24));
+    }
+    return lines;
+  }
+
+  if (categoryContains(item, {"circuit protection", "fuse", "tvs", "transient voltage suppressor"}) ||
+      itemTextContains(item, {"tvs", "transient voltage suppressor", "surge protection", "esd protection"})) {
+    if (const auto standoff = firstParameter(item, {"Voltage - Reverse Standoff (Typ)", "Reverse Standoff"})) {
+      lines.push_back(shortValueLine("Vst", standoff, 24));
+    } else if (const auto breakdown = firstParameter(item, {"Voltage - Breakdown (Min)", "Breakdown"})) {
+      lines.push_back(shortValueLine("Vbr", breakdown, 24));
+    }
+    if (const auto clamping = firstParameter(item, {"Voltage - Clamping (Max) @ Ipp", "Clamping"})) {
+      lines.push_back(shortValueLine("Vc", clamping, 24));
+    }
+    if (const auto current = firstParameter(item, {"Current - Peak Pulse (10/1000µs)", "Current - Peak Pulse (10/1000Âµs)",
+                                                   "Peak Pulse Current", "Current Rating", "Current"})) {
+      lines.push_back(shortValueLine("Ipp", current, 24));
+    }
+    if (const auto power = firstParameter(item, {"Power - Peak Pulse", "Peak Pulse Power"})) {
+      lines.push_back(shortValueLine("Ppp", power, 24));
     }
     return lines;
   }
@@ -727,12 +1217,53 @@ class WindowsPrinterBackend final : public PrinterBackend {
 };
 #endif
 
-string upperCategoryHeader(const InventoryItem& item) {
-  auto category = trim(displayCategory(item.category));
-  if (category.empty()) {
-    category = trim(item.partName);
+string partContextHeader(const InventoryItem& item) {
+  if (categoryContains(item, {"capacitor"})) {
+    return "Capacitor";
   }
-  return uppercaseAscii(category);
+  if (categoryContains(item, {"resistor"})) {
+    return "Resistor";
+  }
+  if (categoryContains(item, {"indicator", "led"})) {
+    return "LED";
+  }
+  if (categoryContains(item, {"connector"})) {
+    return "Connector";
+  }
+  if (categoryContains(item, {"inductor", "choke", "coil"})) {
+    return "Inductor";
+  }
+  if (categoryContains(item, {"crystal", "oscillator", "resonator"})) {
+    return "Crystal";
+  }
+  if (categoryContains(item, {"mcu", "microcontroller"})) {
+    return "MCU";
+  }
+  if (categoryContains(item, {"sensor", "temperature sensor", "pressure sensor"}) || itemTextContains(item, {"sensor"})) {
+    const auto sensor = sensorContextHeader(item);
+    if (!sensor.empty()) {
+      return sensor;
+    }
+    return "Sensor";
+  }
+  if (categoryContains(item, {"regulator", "voltage regulator", "power management"})) {
+    return "Regulator";
+  }
+  if (categoryContains(item, {"diode", "rectifier", "schottky", "transient voltage suppressor"}) ||
+      itemTextContains(item, {"diode", "rectifier", "schottky", "zener"})) {
+    return diodeContextHeader(item);
+  }
+  if (categoryContains(item, {"transistor", "mosfet", "fet", "discrete semiconductor"}) ||
+      itemTextContains(item, {"transistor", "mosfet", "fet", "bjt"})) {
+    return transistorContextHeader(item);
+  }
+  if (categoryContains(item, {"integrated circuit", "integrated circuits"})) {
+    const auto icContext = integratedCircuitContextHeader(item);
+    if (!icContext.empty()) {
+      return icContext;
+    }
+  }
+  return fallbackContextHeader(item);
 }
 
 }  // namespace
@@ -821,7 +1352,7 @@ PrinterCheckResult LabelPrinterService::probeConfiguredPrinter() const {
 HimsLabelPlan LabelPrinterService::buildLabelPlan(const InventoryItem& item) const {
   HimsLabelPlan plan;
   const auto parameterLines = parameterLinesForItem(item);
-  plan.categoryHeader = upperCategoryHeader(item);
+  plan.categoryHeader = partContextHeader(item);
   plan.mainValue = mainLabelValue(item);
   plan.packageLine = shortPackageLine(item);
   plan.manufacturerLine = manufacturerLine(item);
@@ -872,7 +1403,7 @@ string LabelPrinterService::buildZpl(const InventoryItem& item) const {
   out << "\r\n";
   out << "^FX --- Package ---\r\n";
   if (!packageLine.empty()) {
-    out << "^FO10,70^A0N,17,17^FD" << sanitizeLabelText(packageLine) << "^FS\r\n";
+    out << "^FO10,70^A0N,14,14^FD" << sanitizeLabelText(packageLine) << "^FS\r\n";
   }
   out << "\r\n";
   out << "^FX --- Thin divider ---\r\n";

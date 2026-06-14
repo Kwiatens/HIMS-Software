@@ -18,6 +18,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <regex>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,22 +32,22 @@ using namespace std;
 namespace {
 
 constexpr const char* kColorReset = "\x1b[0m";
-constexpr const char* kColorTitle = "\x1b[38;5;81m";
-constexpr const char* kColorAccent = "\x1b[38;5;49m";
-constexpr const char* kColorInfo = "\x1b[38;5;117m";
-constexpr const char* kColorSuccess = "\x1b[38;5;114m";
-constexpr const char* kColorLink = "\x1b[38;5;87m";
-constexpr const char* kColorLabel = "\x1b[38;5;111m";
-constexpr const char* kColorMuted = "\x1b[38;5;243m";
+constexpr const char* kColorTitle = "\x1b[38;5;215m";
+constexpr const char* kColorAccent = "\x1b[38;5;208m";
+constexpr const char* kColorInfo = "\x1b[38;5;250m";
+constexpr const char* kColorSuccess = "\x1b[38;5;252m";
+constexpr const char* kColorLink = "\x1b[38;5;221m";
+constexpr const char* kColorLabel = "\x1b[38;5;246m";
+constexpr const char* kColorMuted = "\x1b[38;5;244m";
 constexpr const char* kColorWarn = "\x1b[38;5;214m";
-constexpr const char* kColorDanger = "\x1b[38;5;203m";
-constexpr const char* kColorDim = "\x1b[38;5;245m";
-constexpr const char* kColorSelect = "\x1b[48;5;236m";
-constexpr const char* kBgPanelLeft = "\x1b[48;5;233m";
-constexpr const char* kBgPanelRight = "\x1b[48;5;235m";
-constexpr const char* kBgRowDark = "\x1b[48;5;232m";
-constexpr const char* kBgRowLight = "\x1b[48;5;236m";
-constexpr const char* kBgRowSelected = "\x1b[48;5;24m";
+constexpr const char* kColorDanger = "\x1b[38;5;167m";
+constexpr const char* kColorDim = "\x1b[38;5;239m";
+constexpr const char* kColorSelect = "\x1b[48;5;238m";
+constexpr const char* kBgPanelLeft = "\x1b[48;5;22m";
+constexpr const char* kBgPanelRight = "\x1b[48;5;24m";
+constexpr const char* kBgRowDark = "\x1b[48;5;18m";
+constexpr const char* kBgRowLight = "\x1b[48;5;28m";
+constexpr const char* kBgRowSelected = "\x1b[48;5;58m";
 
 string padRight(string value, int width);
 
@@ -67,63 +68,63 @@ string styleCell(const string& text, int width, const char* fg = nullptr, const 
 }
 
 ftxui::Color uiTitleColor() {
-  return ftxui::Color::RGB(102, 204, 255);
+  return ftxui::Color::RGB(242, 168, 92);
 }
 
 ftxui::Color uiAccentColor() {
-  return ftxui::Color::RGB(80, 220, 170);
+  return ftxui::Color::RGB(216, 132, 58);
 }
 
 ftxui::Color uiInfoColor() {
-  return ftxui::Color::RGB(120, 180, 255);
+  return ftxui::Color::RGB(220, 214, 206);
 }
 
 ftxui::Color uiSuccessColor() {
-  return ftxui::Color::RGB(115, 220, 140);
+  return ftxui::Color::RGB(238, 232, 224);
 }
 
 ftxui::Color uiLinkColor() {
-  return ftxui::Color::RGB(98, 200, 255);
+  return ftxui::Color::RGB(236, 180, 104);
 }
 
 ftxui::Color uiLabelColor() {
-  return ftxui::Color::RGB(170, 160, 255);
+  return ftxui::Color::RGB(190, 184, 176);
 }
 
 ftxui::Color uiWarnColor() {
-  return ftxui::Color::RGB(255, 190, 80);
+  return ftxui::Color::RGB(224, 154, 72);
 }
 
 ftxui::Color uiDangerColor() {
-  return ftxui::Color::RGB(255, 110, 120);
+  return ftxui::Color::RGB(190, 102, 78);
 }
 
 ftxui::Color uiMutedColor() {
-  return ftxui::Color::RGB(180, 180, 180);
+  return ftxui::Color::RGB(166, 162, 156);
 }
 
 ftxui::Color uiDimColor() {
-  return ftxui::Color::RGB(120, 120, 120);
+  return ftxui::Color::RGB(104, 100, 96);
 }
 
 ftxui::Color uiPanelLeftBg() {
-  return ftxui::Color::RGB(24, 24, 24);
+  return ftxui::Color::RGB(22, 22, 22);
 }
 
 ftxui::Color uiPanelRightBg() {
-  return ftxui::Color::RGB(30, 30, 30);
+  return ftxui::Color::RGB(25, 25, 25);
 }
 
 ftxui::Color uiRowDarkBg() {
-  return ftxui::Color::RGB(20, 20, 20);
+  return ftxui::Color::RGB(17, 17, 17);
 }
 
 ftxui::Color uiRowLightBg() {
-  return ftxui::Color::RGB(42, 42, 42);
+  return ftxui::Color::RGB(30, 30, 30);
 }
 
 ftxui::Color uiRowSelectedBg() {
-  return ftxui::Color::RGB(25, 70, 110);
+  return ftxui::Color::RGB(58, 42, 28);
 }
 
 ftxui::Element styledText(const string& text, optional<ftxui::Color> fg = nullopt,
@@ -179,12 +180,33 @@ ftxui::Element panel(const string& title, ftxui::Elements body, optional<ftxui::
   return element;
 }
 
+ftxui::Element footerField(const string& title, const string& body, ftxui::Color titleColor, ftxui::Color bodyColor,
+                           ftxui::Color background, bool flashing = false) {
+  const auto fill = flashing ? ftxui::Color::RGB(58, 42, 28) : background;
+  return ftxui::hbox({
+             styledText(" " + title + ": ", titleColor, fill) | ftxui::bold,
+             styledText(body, bodyColor, fill),
+             ftxui::filler(),
+         }) |
+         ftxui::bgcolor(fill);
+}
+
+ftxui::Element statusCueChip(const string& label, bool active, bool flashing, ftxui::Color fg) {
+  const auto fill = flashing ? ftxui::Color::RGB(58, 42, 28)
+                             : (active ? ftxui::Color::RGB(30, 30, 30) : ftxui::Color::RGB(44, 26, 20));
+  return styledText(" " + label + " ", fg, fill) | ftxui::bold;
+}
+
+ftxui::Element actionChip(const string& label, ftxui::Color fg, ftxui::Color bg) {
+  return styledText(" " + label + " ", fg, bg) | ftxui::bold;
+}
+
 ftxui::Element quantityBadge(int quantity, bool selected = false) {
   const auto fg = quantity <= 0 ? uiDangerColor() : (quantity <= 5 ? uiWarnColor() : uiSuccessColor());
-  const auto bg = selected ? ftxui::Color::RGB(18, 18, 18)
-                           : (quantity <= 0 ? ftxui::Color::RGB(52, 22, 22)
-                                            : (quantity <= 5 ? ftxui::Color::RGB(58, 42, 14)
-                                                             : ftxui::Color::RGB(18, 44, 28)));
+  const auto bg = selected ? ftxui::Color::RGB(58, 42, 28)
+                           : (quantity <= 0 ? ftxui::Color::RGB(42, 24, 20)
+                                            : (quantity <= 5 ? ftxui::Color::RGB(52, 38, 20)
+                                                             : ftxui::Color::RGB(24, 24, 24)));
   return ftxui::text(" QTY " + to_string(quantity) + " ") | ftxui::bold | ftxui::color(fg) | ftxui::bgcolor(bg);
 }
 
@@ -477,6 +499,53 @@ bool looksLikePackagingValue(const string& value) {
   });
 }
 
+bool looksLikeFrequencyValue(const string& value) {
+  return normalizeKey(value).find("hz") != string::npos;
+}
+
+bool looksLikeInductanceValue(const string& value) {
+  const auto normalized = normalizeKey(value);
+  if (normalized.empty() || looksLikeFrequencyValue(value)) {
+    return false;
+  }
+  if (normalized.find("uh") != string::npos || normalized.find("nh") != string::npos ||
+      normalized.find("ph") != string::npos || normalized.find("henry") != string::npos) {
+    return true;
+  }
+  return normalized.find_first_of("0123456789") != string::npos && normalized.back() == 'h';
+}
+
+string canonicalInductanceUnit(string unit) {
+  transform(unit.begin(), unit.end(), unit.begin(), [](unsigned char ch) {
+    return static_cast<char>(tolower(ch));
+  });
+  if (unit == "uh") {
+    return "uH";
+  }
+  if (unit == "nh") {
+    return "nH";
+  }
+  if (unit == "mh") {
+    return "mH";
+  }
+  if (unit == "ph") {
+    return "pH";
+  }
+  return "H";
+}
+
+optional<string> extractInductanceFromText(const string& text) {
+  regex valuePattern(R"(\b(\d+(?:\.\d+)?|\d+[rR]\d+)\s*([munp]?h)\b)", regex_constants::icase);
+  smatch match;
+  if (regex_search(text, match, valuePattern) && match.size() > 2) {
+    auto number = match[1].str();
+    replace(number.begin(), number.end(), 'R', '.');
+    replace(number.begin(), number.end(), 'r', '.');
+    return number + canonicalInductanceUnit(match[2].str());
+  }
+  return nullopt;
+}
+
 const Parameter* findParameter(const vector<Parameter>& parameters, initializer_list<const char*> names) {
   for (const auto* name : names) {
     for (const auto& parameter : parameters) {
@@ -486,6 +555,29 @@ const Parameter* findParameter(const vector<Parameter>& parameters, initializer_
     }
   }
   return nullptr;
+}
+
+optional<string> parameterValueMatching(const InventoryItem& item, initializer_list<const char*> names,
+                                        bool (*predicate)(const string&)) {
+  for (const auto* name : names) {
+    for (const auto& parameter : item.parameters) {
+      if (!parameterLabelMatches(parameter.name, name)) {
+        continue;
+      }
+      const auto value = trim(parameter.value);
+      if (!value.empty() && !looksLikePackagingValue(value) && predicate(value)) {
+        return value;
+      }
+    }
+  }
+  return nullopt;
+}
+
+optional<string> inferredInductanceValue(const InventoryItem& item) {
+  if (const auto value = parameterValueMatching(item, {"Inductance", "Value"}, looksLikeInductanceValue)) {
+    return value;
+  }
+  return extractInductanceFromText(item.notes + " " + item.partName + " " + item.sku);
 }
 
 optional<string> parameterValue(const InventoryItem& item, initializer_list<const char*> names) {
@@ -600,7 +692,7 @@ vector<DetailField> electricalFieldsForItem(const InventoryItem& item) {
   }
 
   if (categoryContains(item, {"inductor", "choke", "coil"})) {
-    addValueAndPackage("Inductance", parameterValue(item, {"Inductance", "Value"}), package);
+    addValueAndPackage("Inductance", inferredInductanceValue(item), package);
     addField("Current Rating", parameterValue(item, {"Current Rating", "Current Rating (Amps)", "Current"}));
     addField("DC Resistance", parameterValue(item, {"DC Resistance", "DC Resistance (DCR)", "DCR"}));
     addField("Saturation Current", parameterValue(item, {"Saturation Current", "Current - Saturation (Isat)"}));
@@ -948,8 +1040,21 @@ void App::saveState() {
 }
 
 ftxui::Element App::renderUi() const {
+  const auto now = time(nullptr);
+  const bool scannerFlashing = now <= scannerFlashUntil_;
+  const bool printerFlashing = now <= printerFlashUntil_;
+
   ftxui::Elements body;
-  body.push_back(fullLine("HIMS Terminal  " + summaryLine(), uiTitleColor(), uiPanelLeftBg()));
+  body.push_back(ftxui::hbox({
+                     styledText("HIMS Terminal  " + summaryLine(), uiTitleColor(), uiPanelLeftBg()) | ftxui::bold,
+                     ftxui::filler(),
+                     statusCueChip("HIMS Scan", server_.running(), scannerFlashing,
+                                   server_.running() ? uiTitleColor() : uiWarnColor()),
+                     ftxui::separator(),
+                     statusCueChip("Printer", printerService_.hasConfiguredPrinter(), printerFlashing,
+                                   printerService_.hasConfiguredPrinter() ? uiAccentColor() : uiWarnColor()),
+                 }) |
+                 ftxui::bgcolor(uiPanelLeftBg()));
   body.push_back(ftxui::separator());
   body.push_back(renderPageUi() | ftxui::flex);
   body.push_back(ftxui::separator());
@@ -1201,16 +1306,22 @@ ftxui::Element App::renderDetailUi() const {
 #endif
 
 ftxui::Element App::renderSearchBarUi() const {
+  const auto activeBg = inputMode_ == InputMode::Search || inputMode_ == InputMode::EditValue
+                            ? uiRowSelectedBg()
+                            : uiPanelLeftBg();
+  const auto bodyColor = inputMode_ == InputMode::Search ? uiTitleColor()
+                          : inputMode_ == InputMode::EditValue ? uiLinkColor()
+                                                               : uiMutedColor();
+  const auto bodyText = inputMode_ == InputMode::Search ? "/" + inputBuffer_ + "_"
+                        : inputMode_ == InputMode::EditValue ? activePrompt() + inputBuffer_ + "_"
+                                                             : "/" + searchQuery_;
+
   ftxui::Elements rows;
-  if (inputMode_ == InputMode::Search) {
-    rows.push_back(fullLine("Search  /" + inputBuffer_ + "_", uiLinkColor(), uiPanelLeftBg()));
-  } else {
-    rows.push_back(fullLine("Search  /" + searchQuery_, uiMutedColor(), uiPanelLeftBg()));
-  }
+  rows.push_back(footerField("Search", bodyText, uiAccentColor(), bodyColor, activeBg));
 
   if (inputMode_ == InputMode::EditFieldMenu) {
     ftxui::Elements options;
-    options.push_back(fullLine("Edit fields", uiAccentColor(), uiPanelLeftBg()));
+    options.push_back(footerField("Edit fields", "", uiAccentColor(), uiMutedColor(), uiPanelLeftBg()));
     for (size_t index = 0; index < menuOptions_.size(); ++index) {
       const auto bg = static_cast<int>(index) == fieldMenuIndex_ ? uiRowSelectedBg() : (index % 2 == 0 ? uiRowDarkBg() : uiRowLightBg());
       auto option = fullLine("  [" + to_string(index < 9 ? index + 1 : 0) + "] " + menuOptions_[index].label,
@@ -1220,9 +1331,7 @@ ftxui::Element App::renderSearchBarUi() const {
       }
       options.push_back(option);
     }
-    rows.push_back(panel("Edit fields", move(options), uiAccentColor()) | ftxui::bgcolor(uiPanelLeftBg()));
-  } else if (inputMode_ == InputMode::EditValue) {
-    rows.push_back(fullLine("Input  " + activePrompt() + inputBuffer_ + "_", uiLinkColor(), uiPanelLeftBg()));
+    rows.push_back(ftxui::vbox(move(options)));
   }
 
   return ftxui::vbox(move(rows));
@@ -2423,6 +2532,12 @@ void App::adjustQuantity(int delta) {
 
 void App::logActivity(const string& kind, const string& message) {
   appendActivity(activities_, makeActivity(kind, message));
+  const auto now = time(nullptr);
+  if (kind == "scan") {
+    scannerFlashUntil_ = now + 3;
+  } else if (kind == "print") {
+    printerFlashUntil_ = now + 3;
+  }
   server_.setRecentActivity(activities_);
   saveActivities(activityPath_, activities_);
   dirty_ = true;

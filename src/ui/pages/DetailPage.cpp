@@ -164,8 +164,8 @@ void App::renderDetail(ostringstream& out, const ConsoleSize& size) {
     return;
   }
 
-  const int leftWidth = max(40, size.columns / 2 - 3);
-  const int rightWidth = max(40, size.columns - leftWidth - 4);
+  const int rightWidth = clamp(size.columns / 3, 42, 58);
+  const int leftWidth = max(40, size.columns - rightWidth - 4);
 
   vector<string> leftLines;
   vector<string> rightLines;
