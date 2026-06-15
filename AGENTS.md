@@ -34,6 +34,16 @@ The goals are:
 - Keep the app controller split small and focused; move new cross-page helpers into `src/app/` instead of growing the controller file again.
 - Keep the mobile scanner page in `src/platform/web/scanner.html`, and remember it is copied into the runtime output during the build.
 
+## Security And Safety
+
+- Never hardcode personal paths, usernames, machine names, local plugin folders, or user-specific fallback locations into public code.
+- Never commit secrets, tokens, `.env` values, private keys, or credentials; load them from environment variables or local config files that stay out of git.
+- Before committing or pushing, scan changed files for `C:\Users\`, home-directory paths, API keys, and other machine-specific references.
+- If a change would expose private local data in public history, stop, report it, and rewrite the smallest possible history slice needed to remove it.
+- Prefer runtime discovery and generic defaults over developer-machine fallbacks.
+- Keep compatibility fallbacks only when they are truly user-data migration paths, and document why they exist.
+- If a cleanup requires force-pushing rewritten history, preserve unrelated local work and verify the remote branch points only at the sanitized commit range.
+
 ## Code Structure
 
 - `src/ui/pages/` owns page-local TUI rendering and page-specific keyboard handling.
@@ -72,7 +82,7 @@ Tests:
 After each finished change, always:
 
 1. Build the software.
-2. Execute the software in an agent-owned verification session, not a user-owned or already-running window.
+2. Execute the software in a user-owned new terminal window.
 3. Verify the change behaves as intended.
 4. If the change touches the TUI or any terminal rendering code, capture a screenshot of the terminal window itself and inspect it visually before finishing.
 
