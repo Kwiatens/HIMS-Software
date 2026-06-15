@@ -27,15 +27,29 @@ The goals are:
 - Keep the UI industrial, clean, and readable.
 - Avoid adding unnecessary layers or frameworks.
 - Favor clear data flow and simple state handling.
-- Keep page-specific terminal UI code under `src/ui/pages/`.
-- Keep shared UI formatting helpers under `src/ui/shared/`.
+- Keep each page's render logic and key handling together under `src/ui/pages/`.
+- Keep shared UI formatting and detail helpers under `src/ui/shared/`.
+- Keep inventory implementation split across focused files under `src/core/`, with string/id helpers, query logic, serialization, history, storage, seed data, scan handling, and SQLite glue separated instead of recombined into one file.
+- Keep startup/bootstrap path helpers in `src/app/AppBootstrap.cpp`, shared app workflows and state helpers in `src/app/AppActions.cpp`, and controller wiring in `src/app.cpp`.
+- Keep the app controller split small and focused; move new cross-page helpers into `src/app/` instead of growing the controller file again.
 - Keep the mobile scanner page in `src/platform/web/scanner.html`, and remember it is copied into the runtime output during the build.
+
+## Code Structure
+
+- `src/ui/pages/` owns page-local TUI rendering and page-specific keyboard handling.
+- `src/ui/shared/` owns reusable terminal formatting and inventory detail helpers.
+- `src/core/` owns inventory domain logic, with the implementation split across focused files for helpers, query, serialization, history, storage, seed data, scan handling, and SQLite support.
+- `src/app/AppBootstrap.cpp` owns filesystem bootstrap helpers and database reuse paths.
+- `src/app/AppActions.cpp` owns shared app state helpers, import workflow, scan handling, and DigiKey sync helpers.
+- `src/app.cpp` owns live terminal render/input wiring.
+- `src/platform/web/scanner.html` remains the local companion scanner page and is copied into the runtime output during the build.
 
 ## Data And Files
 
 - Inventory data is stored locally in `Documents/HIMS/inventory.db`.
 - Activity history is stored locally in `Documents/HIMS/activity.tsv`.
 - On first launch, the app copies the existing OG inventory database if it is available, so the inventory can be reused without rescanning.
+- The app does not ship with built-in sample inventory; an empty store on first launch is expected until the user adds parts or imports data.
 
 ## Build And Run
 
@@ -85,6 +99,7 @@ Start-Process -FilePath "$env:ComSpec" -WorkingDirectory (Split-Path $exe) -Argu
 ```
 
 - If screenshot QA is needed, capture the MAXIMISED FULL SCREEN terminal window whose title contains the unique verification title. Windows Terminal may append the running executable path to the title. Use a window-only capture method such as `PrintWindow` against that exact window handle.
+- If `PrintWindow` returns a blank frame, retry with a different window-only capture path that still targets the exact verification window rather than the desktop.
 - The verification window must remain visible and inspectable; do not rely on a shell process that cannot be seen on the desktop.
 - Do not use full-desktop or screen-pixel screenshots for terminal QA; they can capture whatever is behind the window.
 - If the terminal must be made visible for interactive inspection, keep it on the agent-owned window only, not on a user-owned HIMS session.

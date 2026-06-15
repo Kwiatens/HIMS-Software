@@ -11,6 +11,7 @@
 
 #include <ftxui/dom/elements.hpp>
 
+#include <cstddef>
 #include <filesystem>
 #include <mutex>
 #include <sstream>
@@ -19,7 +20,12 @@
 
 namespace hims {
 
-using namespace std;
+std::filesystem::path documentsHimsPath();
+std::filesystem::path legacyDatabasePath();
+void copyDatabaseSidecar(const std::filesystem::path& sourceBase,
+                         const std::filesystem::path& destinationBase, const std::string& suffix);
+void ensureInventoryDatabaseCopied(const std::filesystem::path& localBase);
+std::filesystem::path locateDotEnvFile();
 
 class App {
  public:
@@ -60,7 +66,7 @@ class App {
   };
 
   struct FieldOption {
-    string label;
+    std::string label;
     EditField field;
   };
 
@@ -84,13 +90,13 @@ class App {
   void handleEditValueKey(const KeyEvent& key);
 
   void render();
-  void renderDashboard(ostringstream& out, const ConsoleSize& size);
-  void renderStock(ostringstream& out, const ConsoleSize& size);
-  void renderDetail(ostringstream& out, const ConsoleSize& size);
-  void renderImportCsv(ostringstream& out, const ConsoleSize& size);
-  void renderSearchBar(ostringstream& out, const ConsoleSize& size);
-  void renderStatusBar(ostringstream& out, const ConsoleSize& size);
-  void renderMessage(ostringstream& out, const ConsoleSize& size);
+  void renderDashboard(std::ostringstream& out, const ConsoleSize& size);
+  void renderStock(std::ostringstream& out, const ConsoleSize& size);
+  void renderDetail(std::ostringstream& out, const ConsoleSize& size);
+  void renderImportCsv(std::ostringstream& out, const ConsoleSize& size);
+  void renderSearchBar(std::ostringstream& out, const ConsoleSize& size);
+  void renderStatusBar(std::ostringstream& out, const ConsoleSize& size);
+  void renderMessage(std::ostringstream& out, const ConsoleSize& size);
 
   ftxui::Element renderUi() const;
   ftxui::Element renderDashboardUi() const;
@@ -100,20 +106,19 @@ class App {
   ftxui::Element renderImportCsvUi() const;
   ftxui::Element renderSearchBarUi() const;
   ftxui::Element renderStatusBarUi() const;
-  ftxui::Element renderActionToolkitUi() const;
   ftxui::Element renderMessageUi() const;
   ftxui::Element renderPageUi() const;
 
-  void setMessage(string text, int seconds = 3);
+  void setMessage(std::string text, int seconds = 3);
   bool messageVisible() const;
   void clearMessageIfExpired();
   void markDirty();
   void refreshPrinterState();
   void openPrinterSetup();
   bool printSelectedLabel();
-  string printerSummary() const;
+  std::string printerSummary() const;
 
-  vector<size_t> filteredIndices() const;
+  std::vector<size_t> filteredIndices() const;
   size_t selectedIndex() const;
   InventoryItem* selectedItem();
   const InventoryItem* selectedItem() const;
@@ -135,11 +140,11 @@ class App {
   void beginEditCurrentItem(bool createNew);
   void beginEditImportCandidate();
   void openFieldMenu();
-  void commitEditField(EditField field, const string& value);
+  void commitEditField(EditField field, const std::string& value);
   void saveWorkingCopy();
   void adjustQuantity(int delta);
-  void logActivity(const string& kind, const string& message);
-  void pushScanCode(const string& code);
+  void logActivity(const std::string& kind, const std::string& message);
+  void pushScanCode(const std::string& code);
   void processScans();
   void beginCsvImport();
   void moveImportSelection(int delta);
@@ -150,43 +155,43 @@ class App {
   void syncAcceptedImports();
   CsvImportCandidate* currentImportCandidate();
   const CsvImportCandidate* currentImportCandidate() const;
-  string importCompletionMessage() const;
-  void openCurrentUrl(const string& url, const string& label);
-  string fieldLabel(EditField field) const;
-  string currentFieldValue(EditField field) const;
-  vector<FieldOption> fieldOptions() const;
-  string itemDetailText(const InventoryItem& item, int width) const;
-  string summaryLine() const;
-  string scannerUrl() const;
-  string activePrompt() const;
-  string shortcutSummary() const;
+  std::string importCompletionMessage() const;
+  void openCurrentUrl(const std::string& url, const std::string& label);
+  std::string fieldLabel(EditField field) const;
+  std::string currentFieldValue(EditField field) const;
+  std::vector<FieldOption> fieldOptions() const;
+  std::string itemDetailText(const InventoryItem& item, int width) const;
+  std::string summaryLine() const;
+  std::string scannerUrl() const;
+  std::string activePrompt() const;
+  std::string shortcutSummary() const;
 
   InventoryStore store_;
-  vector<ActivityEntry> activities_;
+  std::vector<ActivityEntry> activities_;
   LabelPrinterService printerService_;
-  vector<PrinterQueueInfo> printerQueues_;
+  std::vector<PrinterQueueInfo> printerQueues_;
   PrinterCheckResult printerCheck_;
   LocalHttpServer server_;
-  filesystem::path root_;
-  filesystem::path dataPath_;
-  filesystem::path inventoryPath_;
-  filesystem::path printerPath_;
-  filesystem::path activityPath_;
+  std::filesystem::path root_;
+  std::filesystem::path dataPath_;
+  std::filesystem::path inventoryPath_;
+  std::filesystem::path printerPath_;
+  std::filesystem::path activityPath_;
   Page page_ = Page::Dashboard;
   InputMode inputMode_ = InputMode::None;
-  string searchQuery_;
-  string inputBuffer_;
-  string message_;
+  std::string searchQuery_;
+  std::string inputBuffer_;
+  std::string message_;
   time_t messageUntil_ = 0;
   size_t selectedPosition_ = 0;
   size_t stockScroll_ = 0;
   size_t detailScroll_ = 0;
-  vector<string> scanQueue_;
-  vector<CsvImportCandidate> importCandidates_;
-  vector<string> importAcceptedItemIds_;
-  filesystem::path importSourcePath_;
-  vector<InventoryHistoryPoint> inventoryHistory_;
-  mutex scanMutex_;
+  std::vector<std::string> scanQueue_;
+  std::vector<CsvImportCandidate> importCandidates_;
+  std::vector<std::string> importAcceptedItemIds_;
+  std::filesystem::path importSourcePath_;
+  std::vector<InventoryHistoryPoint> inventoryHistory_;
+  std::mutex scanMutex_;
   bool running_ = true;
   bool dirty_ = true;
   ConsoleSize lastDrawSize_{};
@@ -201,8 +206,8 @@ class App {
   int importSyncedCount_ = 0;
   int importSyncFailedCount_ = 0;
   int fieldMenuIndex_ = 0;
-  vector<FieldOption> menuOptions_;
-  string deleteConfirmationItemId_;
+  std::vector<FieldOption> menuOptions_;
+  std::string deleteConfirmationItemId_;
   time_t deleteConfirmationUntil_ = 0;
   size_t printerSelection_ = 0;
   time_t scannerFlashUntil_ = 0;

@@ -13,6 +13,51 @@ using namespace std;
 
 namespace {
 
+vector<InventoryItem> makeSampleInventory() {
+  vector<InventoryItem> items;
+
+  items.push_back({
+      "res-0603-10k",
+      "10k Resistor 0603",
+      "Yageo",
+      "Resistors",
+      180,
+      50,
+      "Shelf A3",
+      {"0603", "1%", "rohs"},
+      {{"Resistance", "10k Ohm"}, {"Power", "0.1W"}, {"Package", "0603"}},
+      "General purpose pull-up and divider resistor.",
+      "311-10.0KHRCT-ND",
+      "https://www.digikey.com/en/products/detail/yageo/RC0603FR-0710KL/729604",
+      "https://www.digikey.com/en/products/detail/yageo/RC0603FR-0710KL/729604",
+      "synced",
+      "RC0603FR-0710KL",
+      1710000000,
+  });
+
+  items.push_back({
+      "esp32-s3-module",
+      "ESP32-S3 Module",
+      "Espressif",
+      "MCUs",
+      4,
+      10,
+      "ESD Drawer",
+      {"wifi", "bluetooth", "module"},
+      {{"Core", "Xtensa LX7"}, {"Flash", "16MB"}, {"Package", "Module"}},
+      "Used for integration prototypes and test rigs.",
+      "1965-ESP32-S3-MODULE-ND",
+      "https://www.digikey.com/en/products/detail/espressif-systems/ESP32-S3/15240400",
+      "https://www.digikey.com/en/products/detail/espressif-systems/ESP32-S3/15240400",
+      "synced",
+      "ESP32-S3-WROOM-1",
+      1710000100,
+  });
+
+  ensureInventoryIdentifiers(items);
+  return items;
+}
+
 class MockPrinterBackend final : public PrinterBackend {
  public:
   vector<PrinterQueueInfo> enumeratePrinters() const override {
@@ -53,7 +98,7 @@ class MockPrinterBackend final : public PrinterBackend {
 
 int main() {
   {
-    auto items = seedInventory();
+    auto items = makeSampleInventory();
     assert(!items.empty());
 
     const auto filtered = filterItems(items, "cat:resistors qty>100");
@@ -66,7 +111,7 @@ int main() {
   }
 
   {
-    auto items = seedInventory();
+    auto items = makeSampleInventory();
     InventoryStore store;
     store.items() = items;
 
@@ -158,7 +203,7 @@ int main() {
         "Index,Digi-Key Part Number,Manufacturer Part Number,Manufacturer,Description,Quantity,Unit Price,Extended Price\n"
         "1,399-C0603C105K4RACTUCT-ND,C0603C105K4RACTU,KEMET,CAP CER 1UF 16V X7R 0603,50,\"0,13420 zł\",\"6,71 zł\"\n";
 
-    auto existing = seedInventory();
+    auto existing = makeSampleInventory();
     InventoryItem duplicate;
     duplicate.id = "existing-cap";
     duplicate.partName = "Existing Cap";

@@ -16,7 +16,14 @@
 
 namespace hims {
 
-using namespace std;
+using std::filesystem::path;
+using std::initializer_list;
+using std::nullopt;
+using std::optional;
+using std::ostringstream;
+using std::size_t;
+using std::string;
+using std::vector;
 
 inline constexpr const char* kColorReset = "\x1b[0m";
 inline constexpr const char* kColorTitle = "\x1b[38;5;215m";
@@ -71,6 +78,9 @@ ftxui::Element bulletLine(const string& label, const string& value, ftxui::Color
                           ftxui::Color valueColor);
 ftxui::Element panel(const string& title, ftxui::Elements body, optional<ftxui::Color> titleColor = nullopt,
                      optional<ftxui::Color> borderColor = nullopt);
+ftxui::Element footerField(const string& title, const string& body, ftxui::Color titleColor, ftxui::Color bodyColor,
+                           ftxui::Color background, bool flashing = false);
+ftxui::Element statusCueChip(const string& label, bool active, bool flashing, ftxui::Color fg);
 ftxui::Element quantityBadge(int quantity, bool selected = false);
 
 string displayCategory(const string& category);

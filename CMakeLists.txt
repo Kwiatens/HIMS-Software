@@ -26,18 +26,27 @@ endif()
 add_executable(hims
   src/main.cpp
   src/app.cpp
+  src/app/AppBootstrap.cpp
+  src/app/AppActions.cpp
+  src/core/Inventory.cpp
+  src/core/InventoryHelpers.cpp
+  src/core/InventoryQuery.cpp
+  src/core/InventorySerialization.cpp
+  src/core/InventoryHistory.cpp
+  src/core/InventoryStorage.cpp
+  src/core/InventoryScan.cpp
+  src/core/InventorySqlite.cpp
   src/import/DigiKeyCsvImport.cpp
+  src/label_printer/LabelPrinter.cpp
+  src/platform/HttpServer.cpp
+  src/platform/DigiKeyApi.cpp
+  src/platform/Console.cpp
   src/ui/shared/AppUiShared.cpp
   src/ui/pages/DashboardPage.cpp
   src/ui/pages/StockPage.cpp
   src/ui/pages/DetailPage.cpp
   src/ui/pages/PrinterSetupPage.cpp
   src/ui/pages/ImportCsvPage.cpp
-  src/core/Inventory.cpp
-  src/label_printer/LabelPrinter.cpp
-  src/platform/HttpServer.cpp
-  src/platform/DigiKeyApi.cpp
-  src/platform/Console.cpp
 )
 
 target_include_directories(hims PRIVATE src)
@@ -59,6 +68,13 @@ add_executable(hims_tests
   src/import/DigiKeyCsvImport.cpp
   src/ui/shared/AppUiShared.cpp
   src/core/Inventory.cpp
+  src/core/InventoryHelpers.cpp
+  src/core/InventoryQuery.cpp
+  src/core/InventorySerialization.cpp
+  src/core/InventoryHistory.cpp
+  src/core/InventoryStorage.cpp
+  src/core/InventoryScan.cpp
+  src/core/InventorySqlite.cpp
   src/label_printer/LabelPrinter.cpp
 )
 

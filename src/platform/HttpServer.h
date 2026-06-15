@@ -25,7 +25,15 @@
 
 namespace hims {
 
-using namespace std;
+namespace filesystem = std::filesystem;
+using std::atomic;
+using std::filesystem::path;
+using std::function;
+using std::mutex;
+using std::string;
+using std::thread;
+using std::uint16_t;
+using std::vector;
 
 class LocalHttpServer {
  public:

@@ -13,7 +13,12 @@
 
 namespace hims {
 
-using namespace std;
+namespace filesystem = std::filesystem;
+using std::filesystem::path;
+using std::optional;
+using std::string;
+using std::unique_ptr;
+using std::vector;
 
 struct PrinterQueueInfo {
   string name;

@@ -8,7 +8,13 @@
 
 namespace hims {
 
-using namespace std;
+namespace filesystem = std::filesystem;
+using std::filesystem::path;
+using std::size_t;
+using std::string;
+using std::string_view;
+using std::time_t;
+using std::vector;
 
 struct Parameter {
   string name;
@@ -93,8 +99,6 @@ bool loadInventoryHistory(const filesystem::path& path, vector<InventoryHistoryP
 bool saveInventoryHistory(const filesystem::path& path, const vector<InventoryHistoryPoint>& history);
 void appendInventoryHistory(vector<InventoryHistoryPoint>& history, const InventoryHistoryPoint& point,
                             size_t maxEntries = 180);
-
-vector<InventoryItem> seedInventory();
 
 class InventoryStore {
  public:

@@ -148,6 +148,23 @@ ftxui::Element panel(const string& title, ftxui::Elements body, optional<ftxui::
   return element;
 }
 
+ftxui::Element footerField(const string& title, const string& body, ftxui::Color titleColor, ftxui::Color bodyColor,
+                           ftxui::Color background, bool flashing) {
+  const auto fill = flashing ? ftxui::Color::RGB(58, 42, 28) : background;
+  return ftxui::hbox({
+             styledText(" " + title + ": ", titleColor, fill) | ftxui::bold,
+             styledText(body, bodyColor, fill),
+             ftxui::filler(),
+         }) |
+         ftxui::bgcolor(fill);
+}
+
+ftxui::Element statusCueChip(const string& label, bool active, bool flashing, ftxui::Color fg) {
+  const auto fill = flashing ? ftxui::Color::RGB(58, 42, 28)
+                             : (active ? ftxui::Color::RGB(30, 30, 30) : ftxui::Color::RGB(44, 26, 20));
+  return styledText(" " + label + " ", fg, fill) | ftxui::bold;
+}
+
 ftxui::Element quantityBadge(int quantity, bool selected) {
   const auto fg = quantity <= 0 ? uiDangerColor() : (quantity <= 5 ? uiWarnColor() : uiSuccessColor());
   const auto bg = selected ? uiRowSelectedBg()

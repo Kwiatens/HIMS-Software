@@ -11,7 +11,10 @@
 
 namespace hims {
 
-using namespace std;
+namespace filesystem = std::filesystem;
+using std::filesystem::path;
+using std::string;
+using std::vector;
 
 struct CsvImportCandidate {
   InventoryItem item;

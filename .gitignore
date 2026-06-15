@@ -13,3 +13,4 @@ x64/
 .env
 .env.*
 !.env.example
+verification/

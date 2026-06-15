@@ -10,7 +10,12 @@
 
 namespace hims {
 
-using namespace std;
+namespace filesystem = std::filesystem;
+using std::filesystem::path;
+using std::optional;
+using std::string;
+using std::time_t;
+using std::vector;
 
 struct DigiKeyConfig {
   string clientId;

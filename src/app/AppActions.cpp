@@ -1,0 +1,980 @@
+// HIMS - Hardware Inventory Management System
+// Shared app state helpers and business actions.
+
+#include "App.h"
+
+#include "platform/DigiKeyApi.h"
+#include "ui/shared/AppUiShared.h"
+
+#include <algorithm>
+#include <cctype>
+#include <ctime>
+#include <limits>
+#include <mutex>
+#include <memory>
+#include <sstream>
+
+namespace hims {
+
+using namespace std;
+
+namespace {
+
+vector<string> splitFlexible(const string& text) {
+  vector<string> values;
+  string current;
+  for (char ch : text) {
+    if (ch == ',' || ch == ';' || ch == '\n') {
+      current = trim(current);
+      if (!current.empty()) {
+        values.push_back(current);
+      }
+      current.clear();
+    } else {
+      current.push_back(ch);
+    }
+  }
+
+  current = trim(current);
+  if (!current.empty()) {
+    values.push_back(current);
+  }
+
+  return values;
+}
+
+vector<Parameter> parseParameters(const string& text) {
+  vector<Parameter> values;
+  for (const auto& entry : splitFlexible(text)) {
+    const auto equalsPos = entry.find('=');
+    if (equalsPos == string::npos) {
+      continue;
+    }
+    values.push_back({trim(entry.substr(0, equalsPos)), trim(entry.substr(equalsPos + 1))});
+  }
+  return values;
+}
+
+bool upsertParameter(vector<Parameter>& parameters, const string& name, const string& value) {
+  const auto trimmedValue = trim(value);
+  if (trimmedValue.empty()) {
+    return false;
+  }
+
+  for (auto& parameter : parameters) {
+    if (parameterLabelMatches(parameter.name, name)) {
+      if (parameter.name.empty()) {
+        parameter.name = name;
+      }
+      const bool changed = parameter.value != trimmedValue;
+      parameter.value = trimmedValue;
+      return changed;
+    }
+  }
+
+  parameters.push_back({name, trimmedValue});
+  return true;
+}
+
+bool mergeDigiKeyMetadata(InventoryItem& item, const DigiKeyProductDetails& details) {
+  bool changed = false;
+
+  const auto normalizePackageLabels = [&]() {
+    for (auto& parameter : item.parameters) {
+      if (parameterLabelMatches(parameter.name, "Package") && looksLikePackagingValue(parameter.value)) {
+        parameter.name = "Packaging";
+        changed = true;
+      }
+    }
+  };
+  normalizePackageLabels();
+
+  const auto assignIfUseful = [&](string& target, const string& value, bool replaceUnknown = false) {
+    const auto trimmed = trim(value);
+    if (trimmed.empty()) {
+      return;
+    }
+    if (target.empty() || (replaceUnknown && (target == "Unknown" || target == "Scanned DigiKey Item"))) {
+      target = trimmed;
+      changed = true;
+    }
+  };
+
+  if ((item.partName.empty() || item.partName == "Scanned DigiKey Item") && !trim(details.productDescription).empty()) {
+    item.partName = trim(details.productDescription);
+    changed = true;
+  }
+
+  assignIfUseful(item.manufacturer, details.manufacturerName, true);
+  assignIfUseful(item.sku, details.manufacturerPartNumber);
+  assignIfUseful(item.productUrl, details.productUrl);
+  assignIfUseful(item.datasheetUrl, details.datasheetUrl);
+
+  for (const auto& parameter : details.parameters) {
+    if (upsertParameter(item.parameters, parameter.name, parameter.value)) {
+      changed = true;
+    }
+  }
+
+  if (!trim(details.packagingType).empty()) {
+    if (upsertParameter(item.parameters, "Packaging", details.packagingType)) {
+      changed = true;
+    }
+  }
+  if (!trim(details.packageName).empty()) {
+    if (upsertParameter(item.parameters, "Package", details.packageName)) {
+      changed = true;
+    }
+  }
+  if (!trim(details.rohsStatus).empty()) {
+    if (upsertParameter(item.parameters, "RoHS", details.rohsStatus)) {
+      changed = true;
+    }
+  }
+  if (!trim(details.leadStatus).empty()) {
+    if (upsertParameter(item.parameters, "Lead Status", details.leadStatus)) {
+      changed = true;
+    }
+  }
+  if (!trim(details.productStatus).empty()) {
+    if (upsertParameter(item.parameters, "Product Status", details.productStatus)) {
+      changed = true;
+    }
+  }
+  if (!trim(details.manufacturerLeadWeeks).empty()) {
+    if (upsertParameter(item.parameters, "Lead Time", details.manufacturerLeadWeeks)) {
+      changed = true;
+    }
+  }
+  if (!trim(details.quantityAvailable).empty()) {
+    if (upsertParameter(item.parameters, "Quantity Available", details.quantityAvailable)) {
+      changed = true;
+    }
+  }
+  if (!trim(details.unitPrice).empty()) {
+    if (upsertParameter(item.parameters, "Unit Price", details.unitPrice)) {
+      changed = true;
+    }
+  }
+  if (!trim(details.detailedDescription).empty() && item.notes.empty()) {
+    item.notes = trim(details.detailedDescription);
+    changed = true;
+  }
+  if (!trim(details.lookupKey).empty()) {
+    assignIfUseful(item.digikeyPartNumber, details.lookupKey);
+  }
+
+  if (item.syncStatus != "synced") {
+    item.syncStatus = "synced";
+    changed = true;
+  }
+  item.lastUpdated = time(nullptr);
+  return changed;
+}
+
+struct DigiKeyApiHandle {
+  unique_ptr<DigiKeyApiClient> client;
+  string error;
+};
+
+DigiKeyApiHandle createDigiKeyApi() {
+  const auto config = loadDigiKeyConfig();
+  if (!config.valid()) {
+    return {nullptr, "DigiKey API credentials are not configured"};
+  }
+
+  return {make_unique<DigiKeyApiClient>(config), {}};
+}
+
+}  // namespace
+
+void App::loadState() {
+  store_.load(inventoryPath_);
+  loadActivities(activityPath_, activities_);
+  printerService_.loadConfig(printerPath_);
+  refreshPrinterState();
+  if (activities_.empty()) {
+    activities_.push_back(makeActivity("system", "Inventory loaded"));
+    activities_.push_back(makeActivity("system", "Terminal dashboard initialized"));
+  }
+  // DigiKey metadata is fetched on demand during scan-driven workflows, not at startup.
+
+  server_.setRecentActivity(activities_);
+  saveState();
+}
+
+void App::saveState() {
+  ensureInventoryIdentifiers(store_.items());
+  store_.save(inventoryPath_);
+  printerService_.saveConfig(printerPath_);
+  saveActivities(activityPath_, activities_);
+}
+
+void App::setMessage(string text, int seconds) {
+  message_ = move(text);
+  messageUntil_ = time(nullptr) + seconds;
+  dirty_ = true;
+}
+
+bool App::messageVisible() const {
+  return !message_.empty() && time(nullptr) <= messageUntil_;
+}
+
+void App::clearMessageIfExpired() {
+  if (!messageVisible() && !message_.empty()) {
+    message_.clear();
+    dirty_ = true;
+  }
+}
+
+void App::markDirty() {
+  dirty_ = true;
+}
+
+vector<size_t> App::filteredIndices() const {
+  return filterItems(store_.items(), searchQuery_);
+}
+
+size_t App::selectedIndex() const {
+  const auto filtered = filteredIndices();
+  if (filtered.empty()) {
+    return numeric_limits<size_t>::max();
+  }
+  const auto position = min(selectedPosition_, filtered.size() - 1);
+  return filtered[position];
+}
+
+InventoryItem* App::selectedItem() {
+  const auto index = selectedIndex();
+  if (index == numeric_limits<size_t>::max()) {
+    return nullptr;
+  }
+  return &store_.items()[index];
+}
+
+const InventoryItem* App::selectedItem() const {
+  const auto index = selectedIndex();
+  if (index == numeric_limits<size_t>::max()) {
+    return nullptr;
+  }
+  return &store_.items()[index];
+}
+
+void App::syncSelectionToFilter() {
+  const auto filtered = filteredIndices();
+  if (filtered.empty()) {
+    selectedPosition_ = 0;
+    return;
+  }
+  if (selectedPosition_ >= filtered.size()) {
+    selectedPosition_ = filtered.size() - 1;
+  }
+  dirty_ = true;
+}
+
+void App::moveSelection(int delta) {
+  const auto filtered = filteredIndices();
+  if (filtered.empty()) {
+    selectedPosition_ = 0;
+    return;
+  }
+
+  const auto current = static_cast<int>(min(selectedPosition_, filtered.size() - 1));
+  const auto next = clamp(current + delta, 0, static_cast<int>(filtered.size() - 1));
+  selectedPosition_ = static_cast<size_t>(next);
+  dirty_ = true;
+}
+
+bool App::deleteConfirmationActive() const {
+  return !deleteConfirmationItemId_.empty();
+}
+
+bool App::deleteConfirmationReady() const {
+  return deleteConfirmationActive() && time(nullptr) >= deleteConfirmationUntil_;
+}
+
+int App::deleteConfirmationSecondsLeft() const {
+  if (!deleteConfirmationActive()) {
+    return 0;
+  }
+  return max(0, static_cast<int>(deleteConfirmationUntil_ - time(nullptr)));
+}
+
+void App::armDeleteConfirmation() {
+  const auto* item = selectedItem();
+  if (item == nullptr) {
+    setMessage("No item selected", 2);
+    return;
+  }
+
+  deleteConfirmationItemId_ = item->id;
+  deleteConfirmationUntil_ = time(nullptr) + 3;
+  dirty_ = true;
+}
+
+void App::cancelDeleteConfirmation() {
+  if (deleteConfirmationItemId_.empty()) {
+    return;
+  }
+
+  deleteConfirmationItemId_.clear();
+  deleteConfirmationUntil_ = 0;
+  dirty_ = true;
+}
+
+void App::clearDeleteConfirmationIfExpired() {
+  // Keep the confirmation popup visible after the countdown reaches zero.
+}
+
+void App::confirmDeleteSelectedItem() {
+  if (!deleteConfirmationActive()) {
+    setMessage("Press Ctrl+Backspace first to arm delete", 2);
+    return;
+  }
+
+  if (!deleteConfirmationReady()) {
+    setMessage("Wait " + to_string(deleteConfirmationSecondsLeft()) + " more second" +
+                   (deleteConfirmationSecondsLeft() == 1 ? string() : string("s")) + " to confirm delete",
+               2);
+    return;
+  }
+
+  const auto it = find_if(store_.items().begin(), store_.items().end(), [&](const InventoryItem& item) {
+    return item.id == deleteConfirmationItemId_;
+  });
+  if (it == store_.items().end()) {
+    cancelDeleteConfirmation();
+    setMessage("Item no longer available", 2);
+    return;
+  }
+
+  const auto itemName = it->partName;
+  store_.items().erase(it);
+  cancelDeleteConfirmation();
+  logActivity("delete", itemName + " deleted");
+  saveState();
+  syncSelectionToFilter();
+  page_ = Page::Stock;
+  setMessage(itemName + " deleted", 2);
+}
+
+void App::changePage(Page page) {
+  page_ = page;
+  inputMode_ = InputMode::None;
+  cancelDeleteConfirmation();
+  dirty_ = true;
+}
+
+void App::openSelectedDetail() {
+  if (selectedItem() != nullptr) {
+    page_ = Page::Detail;
+    dirty_ = true;
+  }
+}
+
+void App::startSearch() {
+  page_ = Page::Stock;
+  inputMode_ = InputMode::Search;
+  inputBuffer_ = searchQuery_;
+  setMessage("Type a keyword, category, tag, parameter, or qty filter", 3);
+}
+
+void App::cancelInput() {
+  inputMode_ = InputMode::None;
+  inputBuffer_.clear();
+  dirty_ = true;
+}
+
+void App::beginEditCurrentItem(bool createNew) {
+  editingImportCandidate_ = false;
+  page_ = Page::Stock;
+  workingCopy_ = {};
+  if (createNew) {
+    workingCopy_.isNew = true;
+    workingCopy_.item.id = makeId();
+    workingCopy_.item.partName = "New Part";
+    workingCopy_.item.manufacturer = "Unknown";
+    workingCopy_.item.category = "Unsorted";
+    workingCopy_.item.location = "Unassigned";
+    workingCopy_.item.syncStatus = "needs_metadata";
+    workingCopy_.item.lastUpdated = time(nullptr);
+    workingCopy_.item.createdAt = workingCopy_.item.lastUpdated;
+    workingCopy_.originalIndex = store_.items().size();
+  } else {
+    const auto* current = selectedItem();
+    if (current == nullptr) {
+      setMessage("No item selected", 2);
+      return;
+    }
+    workingCopy_.isNew = false;
+    workingCopy_.item = *current;
+    workingCopy_.originalIndex = selectedIndex();
+  }
+
+  menuOptions_ = fieldOptions();
+  fieldMenuIndex_ = 0;
+  inputMode_ = InputMode::EditFieldMenu;
+  setMessage("Choose a field to edit", 3);
+}
+
+void App::beginEditImportCandidate() {
+  auto* candidate = currentImportCandidate();
+  if (candidate == nullptr) {
+    setMessage("No import row selected", 2);
+    return;
+  }
+
+  editingImportCandidate_ = true;
+  importEditIndex_ = importSelection_;
+  workingCopy_ = {};
+  workingCopy_.item = candidate->item;
+  workingCopy_.originalIndex = importSelection_;
+  menuOptions_ = fieldOptions();
+  fieldMenuIndex_ = 0;
+  inputMode_ = InputMode::EditFieldMenu;
+  page_ = Page::ImportCsv;
+  setMessage("Choose a field to edit for this import row", 3);
+}
+
+void App::openFieldMenu() {
+  menuOptions_ = fieldOptions();
+  fieldMenuIndex_ = 0;
+  inputMode_ = InputMode::EditFieldMenu;
+}
+
+void App::commitEditField(EditField field, const string& value) {
+  const auto trimmed = trim(value);
+  bool valid = true;
+
+  switch (field) {
+    case EditField::PartName:
+      workingCopy_.item.partName = trimmed;
+      break;
+    case EditField::Manufacturer:
+      workingCopy_.item.manufacturer = trimmed;
+      break;
+    case EditField::Category:
+      workingCopy_.item.category = trimmed;
+      break;
+    case EditField::Quantity:
+      try {
+        workingCopy_.item.quantity = max(0, stoi(trimmed));
+      } catch (...) {
+        valid = false;
+      }
+      break;
+    case EditField::ReorderThreshold:
+      try {
+        workingCopy_.item.reorderThreshold = max(0, stoi(trimmed));
+      } catch (...) {
+        valid = false;
+      }
+      break;
+    case EditField::Location:
+      workingCopy_.item.location = trimmed;
+      break;
+    case EditField::Tags:
+      workingCopy_.item.tags = splitFlexible(trimmed);
+      break;
+    case EditField::Parameters:
+      workingCopy_.item.parameters = parseParameters(trimmed);
+      break;
+    case EditField::Notes:
+      workingCopy_.item.notes = trimmed;
+      break;
+    case EditField::DigiKeyPart:
+      workingCopy_.item.digikeyPartNumber = trimmed;
+      break;
+    case EditField::DatasheetUrl:
+      workingCopy_.item.datasheetUrl = trimmed;
+      break;
+    case EditField::ProductUrl:
+      workingCopy_.item.productUrl = trimmed;
+      break;
+    case EditField::Sku:
+      workingCopy_.item.sku = trimmed;
+      break;
+    case EditField::SyncStatus:
+      workingCopy_.item.syncStatus = toLower(trimmed);
+      break;
+  }
+
+  if (!valid) {
+    setMessage("Invalid numeric value", 3);
+    return;
+  }
+
+  workingCopy_.item.lastUpdated = time(nullptr);
+  setMessage(fieldLabel(field) + " updated", 2);
+  inputBuffer_.clear();
+  inputMode_ = InputMode::EditFieldMenu;
+  dirty_ = true;
+}
+
+void App::saveWorkingCopy() {
+  if (editingImportCandidate_) {
+    if (importEditIndex_ < importCandidates_.size()) {
+      importCandidates_[importEditIndex_].item = workingCopy_.item;
+    }
+
+    editingImportCandidate_ = false;
+    inputMode_ = InputMode::None;
+    page_ = Page::ImportCsv;
+    setMessage("Import row updated", 2);
+    dirty_ = true;
+    return;
+  }
+
+  if (workingCopy_.isNew) {
+    store_.items().push_back(workingCopy_.item);
+    selectedPosition_ = store_.items().empty() ? 0 : store_.items().size() - 1;
+  } else if (workingCopy_.originalIndex < store_.items().size()) {
+    store_.items()[workingCopy_.originalIndex] = workingCopy_.item;
+  }
+
+  logActivity("edit", workingCopy_.item.partName + " updated");
+  saveState();
+  inputMode_ = InputMode::None;
+  page_ = Page::Stock;
+  syncSelectionToFilter();
+  setMessage("Changes saved", 2);
+}
+
+void App::adjustQuantity(int delta) {
+  auto* item = selectedItem();
+  if (item == nullptr) {
+    setMessage("No item selected", 2);
+    return;
+  }
+
+  item->quantity = max(0, item->quantity + delta);
+  item->lastUpdated = time(nullptr);
+  logActivity(delta > 0 ? "stock" : "usage", item->partName + " quantity changed to " + to_string(item->quantity));
+  saveState();
+  setMessage(item->partName + " quantity is now " + to_string(item->quantity), 2);
+  dirty_ = true;
+}
+
+void App::logActivity(const string& kind, const string& message) {
+  appendActivity(activities_, makeActivity(kind, message));
+  const auto now = time(nullptr);
+  if (kind == "scan") {
+    scannerFlashUntil_ = now + 3;
+  } else if (kind == "print") {
+    printerFlashUntil_ = now + 3;
+  }
+  server_.setRecentActivity(activities_);
+  saveActivities(activityPath_, activities_);
+  dirty_ = true;
+}
+
+void App::pushScanCode(const string& code) {
+  lock_guard<mutex> lock(scanMutex_);
+  scanQueue_.push_back(code);
+}
+
+void App::processScans() {
+  vector<string> pending;
+  {
+    lock_guard<mutex> lock(scanMutex_);
+    pending.swap(scanQueue_);
+  }
+
+  for (const auto& code : pending) {
+    const auto resolution = resolveScanCode(store_, code);
+    if (resolution.matched) {
+      if (resolution.created) {
+        logActivity("scan", "Created item from code " + code);
+      } else {
+        logActivity("scan", "Matched existing item with code " + code);
+      }
+
+      if (const auto* item = store_.findById(resolution.itemId)) {
+        const auto it = find_if(store_.items().begin(), store_.items().end(), [&](const InventoryItem& entry) {
+          return entry.id == item->id;
+        });
+        if (it != store_.items().end()) {
+          selectedPosition_ = static_cast<size_t>(distance(store_.items().begin(), it));
+        }
+      }
+
+      saveState();
+      changePage(Page::Detail);
+      setMessage(resolution.message, 3);
+    } else {
+      setMessage("Scan ignored: " + resolution.message, 3);
+    }
+    syncSelectionToFilter();
+  }
+}
+
+void App::beginCsvImport() {
+  filesystem::path selectedPath;
+  if (!openCsvFileDialog(selectedPath)) {
+    setMessage("CSV import cancelled", 2);
+    return;
+  }
+
+  const auto result = loadDigiKeyCsvFile(selectedPath, store_.items());
+  if (!result.ok) {
+    setMessage("CSV import failed: " + result.error, 6);
+    return;
+  }
+
+  importCandidates_ = result.candidates;
+  importAcceptedItemIds_.clear();
+  importSourcePath_ = selectedPath;
+  importSelection_ = 0;
+  importSyncPrompt_ = false;
+  importCreatedCount_ = 0;
+  importMergedCount_ = 0;
+  importSkippedCount_ = 0;
+  importSyncedCount_ = 0;
+  importSyncFailedCount_ = 0;
+  editingImportCandidate_ = false;
+  inputMode_ = InputMode::None;
+  page_ = Page::ImportCsv;
+
+  setMessage("Loaded " + to_string(importCandidates_.size()) + " CSV rows for review", 4);
+}
+
+CsvImportCandidate* App::currentImportCandidate() {
+  if (importCandidates_.empty()) {
+    return nullptr;
+  }
+  importSelection_ = min(importSelection_, importCandidates_.size() - 1);
+  return &importCandidates_[importSelection_];
+}
+
+const CsvImportCandidate* App::currentImportCandidate() const {
+  if (importCandidates_.empty()) {
+    return nullptr;
+  }
+  const auto index = min(importSelection_, importCandidates_.size() - 1);
+  return &importCandidates_[index];
+}
+
+void App::moveImportSelection(int delta) {
+  if (importCandidates_.empty()) {
+    importSelection_ = 0;
+    dirty_ = true;
+    return;
+  }
+
+  const auto current = static_cast<int>(min(importSelection_, importCandidates_.size() - 1));
+  importSelection_ = static_cast<size_t>(clamp(current + delta, 0, static_cast<int>(importCandidates_.size() - 1)));
+  dirty_ = true;
+}
+
+void App::acceptImportCandidate() {
+  auto* candidate = currentImportCandidate();
+  if (candidate == nullptr) {
+    finishImportReview();
+    return;
+  }
+
+  string acceptedId;
+  if (candidate->hasConflict) {
+    auto* existing = store_.findById(candidate->existingItemId);
+    if (existing != nullptr) {
+      existing->quantity = max(0, existing->quantity + candidate->item.quantity);
+      existing->lastUpdated = time(nullptr);
+      mergeImportedMetadata(*existing, candidate->item);
+      acceptedId = existing->id;
+      ++importMergedCount_;
+    }
+  }
+
+  if (acceptedId.empty()) {
+    store_.items().push_back(candidate->item);
+    acceptedId = store_.items().back().id;
+    ++importCreatedCount_;
+  }
+
+  importAcceptedItemIds_.push_back(acceptedId);
+  importCandidates_.erase(importCandidates_.begin() + static_cast<ptrdiff_t>(importSelection_));
+  if (importSelection_ >= importCandidates_.size() && !importCandidates_.empty()) {
+    importSelection_ = importCandidates_.size() - 1;
+  }
+
+  saveState();
+  if (importCandidates_.empty()) {
+    finishImportReview();
+  } else {
+    setMessage("Accepted import row", 2);
+  }
+  dirty_ = true;
+}
+
+void App::skipImportCandidate() {
+  if (importCandidates_.empty()) {
+    finishImportReview();
+    return;
+  }
+
+  importCandidates_.erase(importCandidates_.begin() + static_cast<ptrdiff_t>(importSelection_));
+  ++importSkippedCount_;
+  if (importSelection_ >= importCandidates_.size() && !importCandidates_.empty()) {
+    importSelection_ = importCandidates_.size() - 1;
+  }
+
+  if (importCandidates_.empty()) {
+    finishImportReview();
+  } else {
+    setMessage("Skipped import row", 2);
+  }
+  dirty_ = true;
+}
+
+void App::finishImportReview() {
+  importSyncPrompt_ = !importAcceptedItemIds_.empty();
+  page_ = Page::ImportCsv;
+  inputMode_ = InputMode::None;
+  dirty_ = true;
+}
+
+void App::syncAcceptedImports() {
+  if (importAcceptedItemIds_.empty()) {
+    return;
+  }
+
+  const auto api = createDigiKeyApi();
+  if (api.client == nullptr) {
+    ++importSyncFailedCount_;
+    setMessage("DigiKey sync unavailable: " + api.error, 4);
+    return;
+  }
+
+  for (const auto& itemId : importAcceptedItemIds_) {
+    auto* item = store_.findById(itemId);
+    if (item == nullptr) {
+      ++importSyncFailedCount_;
+      continue;
+    }
+
+    const auto lookup = !trim(item->digikeyPartNumber).empty() ? item->digikeyPartNumber : item->sku;
+    if (trim(lookup).empty()) {
+      ++importSyncFailedCount_;
+      continue;
+    }
+
+    string error;
+    const auto details = api.client->fetchProductDetails(lookup, &error);
+    if (!details) {
+      ++importSyncFailedCount_;
+      continue;
+    }
+
+    mergeDigiKeyMetadata(*item, *details);
+    ++importSyncedCount_;
+  }
+
+  saveState();
+}
+
+void App::finishCsvImport(bool syncWithDigiKey) {
+  if (syncWithDigiKey) {
+    setMessage("Syncing accepted CSV rows with DigiKey API...", 3);
+    syncAcceptedImports();
+  }
+
+  const auto summary = importCompletionMessage();
+  logActivity("import", summary);
+  importCandidates_.clear();
+  importAcceptedItemIds_.clear();
+  importSourcePath_.clear();
+  importSelection_ = 0;
+  importSyncPrompt_ = false;
+  editingImportCandidate_ = false;
+  changePage(Page::Dashboard);
+  setMessage(summary, 8);
+}
+
+string App::importCompletionMessage() const {
+  return "CSV import complete: " + to_string(importCreatedCount_) + " new, " +
+         to_string(importMergedCount_) + " merged, " + to_string(importSkippedCount_) + " skipped, " +
+         to_string(importSyncedCount_) + " synced, " + to_string(importSyncFailedCount_) + " sync failed";
+}
+
+void App::openCurrentUrl(const string& url, const string& label) {
+  if (trim(url).empty()) {
+    setMessage("No " + label + " link stored for this item", 3);
+    return;
+  }
+  if (openUrl(url)) {
+    setMessage("Opened " + label + " link", 2);
+  } else {
+    setMessage("Unable to open " + label + " link", 3);
+  }
+}
+
+string App::fieldLabel(EditField field) const {
+  switch (field) {
+    case EditField::PartName:
+      return "Part name";
+    case EditField::Manufacturer:
+      return "Manufacturer";
+    case EditField::Category:
+      return "Category";
+    case EditField::Quantity:
+      return "Quantity";
+    case EditField::ReorderThreshold:
+      return "Reorder threshold";
+    case EditField::Location:
+      return "Location";
+    case EditField::Tags:
+      return "Tags";
+    case EditField::Parameters:
+      return "Parameters";
+    case EditField::Notes:
+      return "Notes";
+    case EditField::DigiKeyPart:
+      return "DigiKey part";
+    case EditField::DatasheetUrl:
+      return "Datasheet URL";
+    case EditField::ProductUrl:
+      return "Product URL";
+    case EditField::Sku:
+      return "SKU";
+    case EditField::SyncStatus:
+      return "Sync status";
+  }
+  return "Field";
+}
+
+string App::currentFieldValue(EditField field) const {
+  const auto* item = workingCopy_.item.id.empty() && !workingCopy_.isNew ? selectedItem() : &workingCopy_.item;
+  if (item == nullptr) {
+    return {};
+  }
+
+  switch (field) {
+    case EditField::PartName:
+      return item->partName;
+    case EditField::Manufacturer:
+      return item->manufacturer;
+    case EditField::Category:
+      return item->category;
+    case EditField::Quantity:
+      return to_string(item->quantity);
+    case EditField::ReorderThreshold:
+      return to_string(item->reorderThreshold);
+    case EditField::Location:
+      return item->location;
+    case EditField::Tags:
+      return join(item->tags, ',');
+    case EditField::Parameters: {
+      ostringstream out;
+      for (size_t index = 0; index < item->parameters.size(); ++index) {
+        if (index > 0) {
+          out << "; ";
+        }
+        out << item->parameters[index].name << '=' << item->parameters[index].value;
+      }
+      return out.str();
+    }
+    case EditField::Notes:
+      return item->notes;
+    case EditField::DigiKeyPart:
+      return item->digikeyPartNumber;
+    case EditField::DatasheetUrl:
+      return item->datasheetUrl;
+    case EditField::ProductUrl:
+      return item->productUrl;
+    case EditField::Sku:
+      return item->sku;
+    case EditField::SyncStatus:
+      return item->syncStatus;
+  }
+
+  return {};
+}
+
+vector<App::FieldOption> App::fieldOptions() const {
+  return {
+      {"Part name", EditField::PartName},
+      {"Manufacturer", EditField::Manufacturer},
+      {"Category", EditField::Category},
+      {"Quantity", EditField::Quantity},
+      {"Reorder threshold", EditField::ReorderThreshold},
+      {"Location", EditField::Location},
+      {"Tags", EditField::Tags},
+      {"Parameters", EditField::Parameters},
+      {"Notes", EditField::Notes},
+      {"DigiKey part", EditField::DigiKeyPart},
+      {"Datasheet URL", EditField::DatasheetUrl},
+      {"Product URL", EditField::ProductUrl},
+      {"SKU", EditField::Sku},
+      {"Sync status", EditField::SyncStatus},
+      {"Save changes", EditField::PartName},
+      {"Cancel", EditField::PartName},
+  };
+}
+
+string App::itemDetailText(const InventoryItem& item, int width) const {
+  ostringstream out;
+  const auto fields = stockPreviewFields(item);
+  for (const auto& field : fields) {
+    const auto line = field.label + field.value;
+    for (const auto& wrapped : wrapText(line, width)) {
+      out << wrapped << '\n';
+    }
+  }
+
+  return out.str();
+}
+
+string App::summaryLine() const {
+  const auto summary = summarize(store_.items());
+  ostringstream out;
+  out << summary.itemCount << " items"
+      << " | " << summary.totalUnits << " units"
+      << " | " << summary.lowStockCount << " low"
+      << " | " << summary.missingMetadataCount << " missing metadata"
+      << " | " << summary.unsyncedCount << " unsynced";
+  return out.str();
+}
+
+string App::scannerUrl() const {
+  if (!server_.running() || server_.port() == 0) {
+    return "scanner unavailable";
+  }
+  return server_.baseUrl() + "/";
+}
+
+string App::activePrompt() const {
+  if (inputMode_ == InputMode::EditValue && fieldMenuIndex_ >= 0 && fieldMenuIndex_ < static_cast<int>(menuOptions_.size())) {
+    return fieldLabel(menuOptions_[fieldMenuIndex_].field) + ": ";
+  }
+  return "";
+}
+
+string App::shortcutSummary() const {
+  if (inputMode_ == InputMode::Search) {
+    return "Search: 'Enter' apply | 'Esc' cancel";
+  }
+  if (inputMode_ == InputMode::EditFieldMenu) {
+    return "Edit fields: '1'-'0' choose | 'Esc' cancel";
+  }
+  if (inputMode_ == InputMode::EditValue) {
+    return "Edit value: 'Enter' save | 'Esc' cancel";
+  }
+
+  switch (page_) {
+    case Page::Dashboard:
+      return "Dashboard: 'Tab'/'1' stock | '2' scanner | '3' add | '4' reload | '5/i' import CSV | 'l' printer | '/' search | 'q' quit";
+    case Page::Stock:
+      return "Stock: 'Tab'/'1' dashboard | 'Enter' detail | 'e' edit | 'n' new | 'Ctrl+Backspace' delete | 'p' print | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+    case Page::Detail:
+      return "Detail: 'Esc' stock | 'e' edit | 'p' print | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+    case Page::ImportCsv:
+      if (importSyncPrompt_) {
+        return "Import sync: 'Enter'/'y' sync with DigiKey API | 'n'/'Esc' finish";
+      }
+      return "Import CSV: arrows/j/k move | 'Enter' accept | 'e' edit | 'Backspace' skip | 'Esc' cancel";
+  }
+
+  return {};
+}
+
+}  // namespace hims
