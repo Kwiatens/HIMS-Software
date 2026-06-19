@@ -36,9 +36,11 @@ add_executable(hims
   src/core/InventoryStorage.cpp
   src/core/InventoryScan.cpp
   src/core/InventorySqlite.cpp
+  src/core/HimsScanProtocol.cpp
   src/import/DigiKeyCsvImport.cpp
   src/label_printer/LabelPrinter.cpp
   src/platform/HttpServer.cpp
+  src/platform/MdnsService.cpp
   src/platform/DigiKeyApi.cpp
   src/platform/Console.cpp
   src/ui/shared/AppUiShared.cpp
@@ -46,13 +48,15 @@ add_executable(hims
   src/ui/pages/StockPage.cpp
   src/ui/pages/DetailPage.cpp
   src/ui/pages/PrinterSetupPage.cpp
+  src/ui/pages/HimsScanSetupPage.cpp
   src/ui/pages/ImportCsvPage.cpp
 )
 
 target_include_directories(hims PRIVATE src)
+target_compile_definitions(hims PRIVATE HIMS_VERSION_STRING="${PROJECT_VERSION}")
 
 if(WIN32)
-  target_link_libraries(hims PRIVATE ws2_32 shell32 winhttp comdlg32 winspool)
+  target_link_libraries(hims PRIVATE ws2_32 shell32 winhttp comdlg32 winspool bcrypt dnsapi)
 endif()
 
 target_link_libraries(hims PRIVATE ftxui::screen ftxui::dom ftxui::component)
@@ -75,13 +79,14 @@ add_executable(hims_tests
   src/core/InventoryStorage.cpp
   src/core/InventoryScan.cpp
   src/core/InventorySqlite.cpp
+  src/core/HimsScanProtocol.cpp
   src/label_printer/LabelPrinter.cpp
 )
 
 target_include_directories(hims_tests PRIVATE src)
 
 if(WIN32)
-  target_link_libraries(hims_tests PRIVATE winspool)
+  target_link_libraries(hims_tests PRIVATE winspool bcrypt)
 endif()
 
 target_link_libraries(hims_tests PRIVATE ftxui::screen ftxui::dom ftxui::component)

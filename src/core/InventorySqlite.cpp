@@ -3,6 +3,7 @@
 
 #include "core/InventorySqlite.h"
 
+#include <cstdlib>
 #include <system_error>
 
 namespace hims {
@@ -23,6 +24,56 @@ filesystem::path executableDirectory() {
   return filesystem::path(buffer).parent_path();
 }
 
+filesystem::path sqliteSearchRoot(const char* envName) {
+  if (const char* value = getenv(envName); value != nullptr && *value != '\0') {
+    return filesystem::path(value);
+  }
+  return {};
+}
+
+filesystem::path findSqliteDllUnder(const filesystem::path& root, int maxDepth) {
+  error_code error;
+  if (root.empty()) {
+    return {};
+  }
+
+  filesystem::recursive_directory_iterator end;
+  for (filesystem::recursive_directory_iterator it(root, filesystem::directory_options::skip_permission_denied, error);
+       it != end && !error; ++it) {
+    if (it.depth() > maxDepth) {
+      it.disable_recursion_pending();
+      continue;
+    }
+
+    if (!it->is_regular_file(error)) {
+      continue;
+    }
+    if (toLower(it->path().filename().string()) == "sqlite3.dll") {
+      return it->path();
+    }
+  }
+
+  return {};
+}
+
+filesystem::path findSqliteDllInCommonLocations() {
+  const filesystem::path roots[] = {
+      sqliteSearchRoot("ProgramFiles") / "Blender Foundation",
+      sqliteSearchRoot("LOCALAPPDATA") / "Programs" / "Python",
+      sqliteSearchRoot("ProgramFiles") / "Python",
+      sqliteSearchRoot("ProgramFiles(x86)") / "Python",
+  };
+
+  for (const auto& root : roots) {
+    const auto found = findSqliteDllUnder(root, 6);
+    if (!found.empty()) {
+      return found;
+    }
+  }
+
+  return {};
+}
+
 }  // namespace
 
 bool SqliteApi::load() {
@@ -33,7 +84,8 @@ bool SqliteApi::load() {
   const filesystem::path candidates[] = {
       filesystem::path("sqlite3.dll"),
       filesystem::current_path() / "sqlite3.dll",
-      executableDirectory() / "sqlite3.dll"};
+      executableDirectory() / "sqlite3.dll",
+      findSqliteDllInCommonLocations()};
 
   for (const auto& candidate : candidates) {
     module = LoadLibraryW(candidate.wstring().c_str());

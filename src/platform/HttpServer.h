@@ -22,6 +22,7 @@
 #include <winsock2.h>
 
 #include "core/Inventory.h"
+#include "core/HimsScanProtocol.h"
 
 namespace hims {
 
@@ -38,6 +39,8 @@ using std::vector;
 class LocalHttpServer {
  public:
   using ScanCallback = function<void(const string&)>;
+  using QuantityCallback = function<DeviceQuantityResult(const DeviceQuantityRequest&)>;
+  using StatusCallback = function<void(const DeviceStatusReport&)>;
 
   LocalHttpServer() = default;
   ~LocalHttpServer();
@@ -45,9 +48,11 @@ class LocalHttpServer {
   LocalHttpServer(const LocalHttpServer&) = delete;
   LocalHttpServer& operator=(const LocalHttpServer&) = delete;
 
-  bool start(uint16_t preferredPort, filesystem::path scannerPagePath, ScanCallback onScan);
+  bool start(uint16_t preferredPort, filesystem::path scannerPagePath, ScanCallback onScan,
+             QuantityCallback onQuantity = {}, StatusCallback onStatus = {});
   void stop();
   void setRecentActivity(vector<ActivityEntry> activities);
+  void setDeviceCredentials(string deviceId, string token);
 
   bool running() const;
   uint16_t port() const;
@@ -68,6 +73,8 @@ class LocalHttpServer {
   bool winsockStarted_ = false;
   thread worker_;
   ScanCallback onScan_;
+  QuantityCallback onQuantity_;
+  StatusCallback onStatus_;
   mutable mutex stateMutex_;
   uint16_t port_ = 0;
   filesystem::path scannerPagePath_;
@@ -76,6 +83,8 @@ class LocalHttpServer {
   string lastError_;
   vector<string> addresses_;
   vector<ActivityEntry> recentActivities_;
+  string pairedDeviceId_;
+  string deviceToken_;
   SOCKET listenSocket_ = INVALID_SOCKET;
 };
 

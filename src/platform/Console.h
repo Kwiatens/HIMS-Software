@@ -22,6 +22,7 @@ enum class KeyType {
   Escape,
   Backspace,
   CtrlBackspace,
+  CtrlZ,
   Tab,
   Up,
   Down,
@@ -62,6 +63,7 @@ void showCursor();
 void setConsoleTitle(const string& title);
 bool openUrl(const string& url);
 bool openCsvFileDialog(filesystem::path& selectedPath);
+bool openFolderDialog(filesystem::path& selectedPath, const string& title);
 vector<string> localAddresses();
 bool controlModifierPressed();
 vector<KeyEvent> pollKeys();

@@ -159,9 +159,9 @@ ftxui::Element footerField(const string& title, const string& body, ftxui::Color
          ftxui::bgcolor(fill);
 }
 
-ftxui::Element statusCueChip(const string& label, bool active, bool flashing, ftxui::Color fg) {
-  const auto fill = flashing ? ftxui::Color::RGB(58, 42, 28)
-                             : (active ? ftxui::Color::RGB(30, 30, 30) : ftxui::Color::RGB(44, 26, 20));
+ftxui::Element statusCueChip(const string& label, bool active, bool flashing, ftxui::Color fg,
+                             ftxui::Color activeBg, ftxui::Color flashingBg, ftxui::Color inactiveBg) {
+  const auto fill = flashing ? flashingBg : (active ? activeBg : inactiveBg);
   return styledText(" " + label + " ", fg, fill) | ftxui::bold;
 }
 

@@ -16,6 +16,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <commdlg.h>
+#include <shlobj.h>
 #include <shellapi.h>
 
 #pragma comment(lib, "Ws2_32.lib")
@@ -195,6 +196,28 @@ bool openCsvFileDialog(filesystem::path& selectedPath) {
   return true;
 }
 
+bool openFolderDialog(filesystem::path& selectedPath, const string& title) {
+  BROWSEINFOA browse{};
+  browse.hwndOwner = nullptr;
+  browse.lpszTitle = title.c_str();
+  browse.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_USENEWUI;
+
+  LPITEMIDLIST itemIdList = SHBrowseForFolderA(&browse);
+  if (itemIdList == nullptr) {
+    return false;
+  }
+
+  char pathBuffer[MAX_PATH] = {};
+  const bool ok = SHGetPathFromIDListA(itemIdList, pathBuffer) != 0;
+  CoTaskMemFree(itemIdList);
+  if (!ok) {
+    return false;
+  }
+
+  selectedPath = filesystem::path(pathBuffer);
+  return true;
+}
+
 vector<string> localAddresses() {
   vector<string> addresses;
 
@@ -255,6 +278,9 @@ vector<KeyEvent> pollKeys() {
         break;
       case 8:
         keys.push_back({controlModifierPressed() ? KeyType::CtrlBackspace : KeyType::Backspace, '\0'});
+        break;
+      case 26:
+        keys.push_back({KeyType::CtrlZ, '\0'});
         break;
       case 9:
         keys.push_back({KeyType::Tab, '\0'});

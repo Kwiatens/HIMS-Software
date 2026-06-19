@@ -13,12 +13,27 @@
 #include <mutex>
 #include <memory>
 #include <sstream>
+#include <system_error>
 
 namespace hims {
 
 using namespace std;
 
 namespace {
+
+filesystem::path resolveInventoryDatabasePath(const filesystem::path& selectedPath) {
+  error_code error;
+  if (selectedPath.empty()) {
+    return {};
+  }
+
+  if (filesystem::is_regular_file(selectedPath, error) &&
+      toLower(selectedPath.extension().string()) == ".db") {
+    return selectedPath;
+  }
+
+  return selectedPath / "inventory.db";
+}
 
 vector<string> splitFlexible(const string& text) {
   vector<string> values;
@@ -189,7 +204,7 @@ DigiKeyApiHandle createDigiKeyApi() {
 }  // namespace
 
 void App::loadState() {
-  store_.load(inventoryPath_);
+  const bool inventoryLoaded = store_.load(inventoryPath_);
   loadActivities(activityPath_, activities_);
   printerService_.loadConfig(printerPath_);
   refreshPrinterState();
@@ -200,7 +215,14 @@ void App::loadState() {
   // DigiKey metadata is fetched on demand during scan-driven workflows, not at startup.
 
   server_.setRecentActivity(activities_);
-  saveState();
+
+  error_code error;
+  const bool inventoryFileExists = filesystem::exists(inventoryPath_, error);
+  if (inventoryLoaded || !inventoryFileExists) {
+    store_.save(inventoryPath_);
+  }
+  printerService_.saveConfig(printerPath_);
+  saveActivities(activityPath_, activities_);
 }
 
 void App::saveState() {
@@ -208,6 +230,79 @@ void App::saveState() {
   store_.save(inventoryPath_);
   printerService_.saveConfig(printerPath_);
   saveActivities(activityPath_, activities_);
+}
+
+bool App::chooseHimsFolder() {
+  filesystem::path selectedPath;
+  if (!openFolderDialog(selectedPath, "Select HIMS folder")) {
+    setMessage("HIMS folder selection cancelled", 2);
+    return false;
+  }
+
+  if (selectedPath.empty()) {
+    setMessage("No folder selected", 2);
+    return false;
+  }
+
+  saveState();
+
+  const auto selectedInventoryPath = resolveInventoryDatabasePath(selectedPath);
+  dataPath_ = selectedInventoryPath.parent_path();
+  inventoryPath_ = selectedInventoryPath;
+  printerPath_ = dataPath_ / "printer.conf";
+  activityPath_ = dataPath_ / "activity.tsv";
+  himsScanConfigPath_ = dataPath_ / "hims_scan.conf";
+  ensureInventoryDatabaseCopied(inventoryPath_);
+
+  printerQueues_.clear();
+  printerCheck_ = {};
+  inventoryHistory_.clear();
+  scanQueue_.clear();
+  importCandidates_.clear();
+  importAcceptedItemIds_.clear();
+  importSourcePath_.clear();
+  workingCopy_ = {};
+  undoSnapshot_ = {};
+  editingImportCandidate_ = false;
+  importEditIndex_ = 0;
+  importSelection_ = 0;
+  importSyncPrompt_ = false;
+  selectedPosition_ = 0;
+  searchQuery_.clear();
+  inputBuffer_.clear();
+  inputMode_ = InputMode::None;
+  page_ = Page::Dashboard;
+  dirty_ = true;
+
+  loadState();
+  loadHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
+  server_.setDeviceCredentials(himsScanConfig_.deviceId, himsScanConfig_.token);
+  setMessage("Loaded HIMS folder: " + dataPath_.string(), 4);
+  return true;
+}
+
+void App::captureUndoSnapshot() {
+  undoSnapshot_.items = store_.items();
+  undoSnapshot_.activities = activities_;
+  undoSnapshot_.selectedPosition = selectedPosition_;
+  undoSnapshot_.valid = true;
+}
+
+bool App::undoLastInventoryChange() {
+  if (!undoSnapshot_.valid) {
+    setMessage("Nothing to undo", 2);
+    return false;
+  }
+
+  store_.items() = undoSnapshot_.items;
+  activities_ = undoSnapshot_.activities;
+  selectedPosition_ = undoSnapshot_.selectedPosition;
+  undoSnapshot_.valid = false;
+  server_.setRecentActivity(activities_);
+  saveState();
+  syncSelectionToFilter();
+  setMessage("Undid last change", 2);
+  return true;
 }
 
 void App::setMessage(string text, int seconds) {
@@ -525,6 +620,7 @@ void App::saveWorkingCopy() {
     return;
   }
 
+  captureUndoSnapshot();
   if (workingCopy_.isNew) {
     store_.items().push_back(workingCopy_.item);
     selectedPosition_ = store_.items().empty() ? 0 : store_.items().size() - 1;
@@ -547,6 +643,7 @@ void App::adjustQuantity(int delta) {
     return;
   }
 
+  captureUndoSnapshot();
   item->quantity = max(0, item->quantity + delta);
   item->lastUpdated = time(nullptr);
   logActivity(delta > 0 ? "stock" : "usage", item->partName + " quantity changed to " + to_string(item->quantity));
@@ -606,6 +703,92 @@ void App::processScans() {
     }
     syncSelectionToFilter();
   }
+}
+
+DeviceQuantityResult App::enqueueDeviceQuantity(const DeviceQuantityRequest& request) {
+  auto pending = make_shared<PendingDeviceQuantity>();
+  pending->request = request;
+  {
+    lock_guard<mutex> lock(deviceQueueMutex_);
+    deviceQuantityQueue_.push_back(pending);
+  }
+  unique_lock<mutex> lock(pending->mutex);
+  if (!pending->ready.wait_for(lock, chrono::seconds(3), [&] { return pending->complete; })) {
+    DeviceQuantityResult timeout;
+    timeout.httpStatus = 503;
+    timeout.error = "HIMS did not process the request in time";
+    return timeout;
+  }
+  return pending->result;
+}
+
+void App::enqueueDeviceStatus(const DeviceStatusReport& report) {
+  lock_guard<mutex> lock(deviceQueueMutex_);
+  deviceStatusQueue_.push_back(report);
+}
+
+void App::processDeviceRequests() {
+  vector<shared_ptr<PendingDeviceQuantity>> quantities;
+  vector<DeviceStatusReport> statuses;
+  {
+    lock_guard<mutex> lock(deviceQueueMutex_);
+    quantities.swap(deviceQuantityQueue_);
+    statuses.swap(deviceStatusQueue_);
+  }
+
+  for (const auto& status : statuses) {
+    deviceLastSeen_ = time(nullptr);
+    deviceFirmwareVersion_ = status.firmwareVersion;
+    deviceRssi_ = status.rssi;
+    dirty_ = true;
+  }
+
+  for (const auto& pending : quantities) {
+    DeviceQuantityResult result;
+    const auto cached = deviceRequestCache_.find(pending->request.requestId);
+    if (cached != deviceRequestCache_.end()) {
+      result = cached->second;
+    } else {
+      const auto* existing = store_.findByCode(pending->request.code);
+      if (isHimsId(trim(pending->request.code)) && existing != nullptr &&
+          toLower(trim(existing->himsId)) == toLower(trim(pending->request.code))) {
+        captureUndoSnapshot();
+      }
+      result = applyDeviceQuantity(store_, pending->request);
+      if (result.ok) {
+        logActivity(result.appliedDelta < 0 ? "usage scan" : "stock scan",
+                    result.item + " quantity changed by " + to_string(result.appliedDelta) +
+                        " to " + to_string(result.quantity));
+        saveState();
+        scannerFlashUntil_ = time(nullptr) + 3;
+        deviceLastResult_ = (result.appliedDelta >= 0 ? "+" : "") + to_string(result.appliedDelta) +
+                            " " + result.item + " QTY " + to_string(result.quantity);
+      } else {
+        deviceLastResult_ = "ERROR " + result.error;
+      }
+      deviceRequestCache_[pending->request.requestId] = result;
+      deviceRequestOrder_.push_back(pending->request.requestId);
+      while (deviceRequestOrder_.size() > 64) {
+        deviceRequestCache_.erase(deviceRequestOrder_.front());
+        deviceRequestOrder_.pop_front();
+      }
+    }
+    deviceLastSeen_ = time(nullptr);
+    dirty_ = true;
+    {
+      lock_guard<mutex> lock(pending->mutex);
+      pending->result = result;
+      pending->complete = true;
+    }
+    pending->ready.notify_one();
+  }
+}
+
+string App::himsScanDeviceSummary() const {
+  if (!himsScanConfig_.paired()) return "R1 NOT PAIRED";
+  if (deviceLastSeen_ == 0 || time(nullptr) - deviceLastSeen_ > 15) return "R1 OFFLINE";
+  if (!deviceLastResult_.empty()) return "R1 ONLINE  " + deviceLastResult_;
+  return "R1 ONLINE  RSSI " + to_string(deviceRssi_);
 }
 
 void App::beginCsvImport() {
@@ -677,6 +860,7 @@ void App::acceptImportCandidate() {
   if (candidate->hasConflict) {
     auto* existing = store_.findById(candidate->existingItemId);
     if (existing != nullptr) {
+      captureUndoSnapshot();
       existing->quantity = max(0, existing->quantity + candidate->item.quantity);
       existing->lastUpdated = time(nullptr);
       mergeImportedMetadata(*existing, candidate->item);
@@ -686,6 +870,7 @@ void App::acceptImportCandidate() {
   }
 
   if (acceptedId.empty()) {
+    captureUndoSnapshot();
     store_.items().push_back(candidate->item);
     acceptedId = store_.items().back().id;
     ++importCreatedCount_;
@@ -911,6 +1096,14 @@ vector<App::FieldOption> App::fieldOptions() const {
   };
 }
 
+string App::softwareVersion() const {
+#ifdef HIMS_VERSION_STRING
+  return HIMS_VERSION_STRING;
+#else
+  return "dev";
+#endif
+}
+
 string App::itemDetailText(const InventoryItem& item, int width) const {
   ostringstream out;
   const auto fields = stockPreviewFields(item);
@@ -954,7 +1147,7 @@ string App::shortcutSummary() const {
     return "Search: 'Enter' apply | 'Esc' cancel";
   }
   if (inputMode_ == InputMode::EditFieldMenu) {
-    return "Edit fields: '1'-'0' choose | 'Esc' cancel";
+    return "Edit fields: arrows choose | 'Enter' select | 'Esc' cancel";
   }
   if (inputMode_ == InputMode::EditValue) {
     return "Edit value: 'Enter' save | 'Esc' cancel";
@@ -962,11 +1155,13 @@ string App::shortcutSummary() const {
 
   switch (page_) {
     case Page::Dashboard:
-      return "Dashboard: 'Tab'/'1' stock | '2' scanner | '3' add | '4' reload | '5/i' import CSV | 'l' printer | '/' search | 'q' quit";
+      return "Dashboard: '1' stock | '2' scanner | '3' add | '5/i' import | 'u' Scan R1 setup | 'h' HIMS folder | 'l' printer | '/' search | 'q' quit";
     case Page::Stock:
-      return "Stock: 'Tab'/'1' dashboard | 'Enter' detail | 'e' edit | 'n' new | 'Ctrl+Backspace' delete | 'p' print | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+      return "Stock: 'Tab'/'1' dashboard | 'Enter' detail | 'e' edit | 'n' new | 'Ctrl+Backspace' delete | 'Ctrl+Z' undo | 'h' HIMS folder | 'p' print | '+/-' qty | '/' search | 's' scanner | 'q' quit";
     case Page::Detail:
-      return "Detail: 'Esc' stock | 'e' edit | 'p' print | '+/-' qty | '/' search | 's' scanner | 'q' quit";
+      return "Detail: 'Esc' stock | 'e' edit | 'p' print | '+/-' qty | 'Ctrl+Z' undo | 'h' HIMS folder | '/' search | 's' scanner | 'q' quit";
+    case Page::HimsScanSetup:
+      return "Scan R1 setup: arrows choose | Enter next/provision | r refresh ports | Esc cancel";
     case Page::ImportCsv:
       if (importSyncPrompt_) {
         return "Import sync: 'Enter'/'y' sync with DigiKey API | 'n'/'Esc' finish";

@@ -71,6 +71,33 @@ string trimHttp(const string& value) {
   return value.substr(begin, end - begin);
 }
 
+string headerValue(const string& headers, const string& wantedName) {
+  istringstream input(headers);
+  string line;
+  const auto wanted = toLower(wantedName);
+  while (getline(input, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    const auto separator = line.find(':');
+    if (separator == string::npos) continue;
+    if (toLower(trimHttp(line.substr(0, separator))) == wanted) {
+      return trimHttp(line.substr(separator + 1));
+    }
+  }
+  return {};
+}
+
+string httpStatusText(int status) {
+  switch (status) {
+    case 200: return "200 OK";
+    case 400: return "400 Bad Request";
+    case 401: return "401 Unauthorized";
+    case 404: return "404 Not Found";
+    case 409: return "409 Conflict";
+    case 503: return "503 Service Unavailable";
+    default: return "500 Internal Server Error";
+  }
+}
+
 string extractScanCode(const string& body) {
   // Accept either a raw code body or the small JSON payload from scanner.html.
   const auto raw = trimHttp(body);
@@ -111,7 +138,8 @@ LocalHttpServer::~LocalHttpServer() {
   stop();
 }
 
-bool LocalHttpServer::start(uint16_t preferredPort, filesystem::path scannerPagePath, ScanCallback onScan) {
+bool LocalHttpServer::start(uint16_t preferredPort, filesystem::path scannerPagePath, ScanCallback onScan,
+                            QuantityCallback onQuantity, StatusCallback onStatus) {
   stop();
 
   WSADATA data{};
@@ -130,6 +158,8 @@ bool LocalHttpServer::start(uint16_t preferredPort, filesystem::path scannerPage
   }
 
   onScan_ = move(onScan);
+  onQuantity_ = move(onQuantity);
+  onStatus_ = move(onStatus);
 
   for (uint16_t candidate = preferredPort; candidate < static_cast<uint16_t>(preferredPort + 20); ++candidate) {
     if (bindSocket(candidate)) {
@@ -169,6 +199,12 @@ void LocalHttpServer::stop() {
 void LocalHttpServer::setRecentActivity(vector<ActivityEntry> activities) {
   lock_guard<mutex> lock(stateMutex_);
   recentActivities_ = move(activities);
+}
+
+void LocalHttpServer::setDeviceCredentials(string deviceId, string token) {
+  lock_guard<mutex> lock(stateMutex_);
+  pairedDeviceId_ = move(deviceId);
+  deviceToken_ = move(token);
 }
 
 bool LocalHttpServer::running() const {
@@ -260,13 +296,21 @@ void LocalHttpServer::workerLoop() {
 
     string request;
     array<char, 4096> buffer{};
-    int received = 0;
-    do {
-      received = recv(client, buffer.data(), static_cast<int>(buffer.size()), 0);
-      if (received > 0) {
-        request.append(buffer.data(), buffer.data() + received);
+    size_t expectedSize = string::npos;
+    while (true) {
+      const int received = recv(client, buffer.data(), static_cast<int>(buffer.size()), 0);
+      if (received <= 0) break;
+      request.append(buffer.data(), buffer.data() + received);
+      const auto headerEnd = request.find("\r\n\r\n");
+      if (headerEnd != string::npos && expectedSize == string::npos) {
+        const auto contentLength = headerValue(request.substr(0, headerEnd), "Content-Length");
+        size_t bodySize = 0;
+        try { bodySize = contentLength.empty() ? 0 : stoul(contentLength); } catch (...) { bodySize = 0; }
+        expectedSize = headerEnd + 4 + bodySize;
       }
-    } while (received > 0 && request.find("\r\n\r\n") == string::npos);
+      if (expectedSize != string::npos && request.size() >= expectedSize) break;
+      if (request.size() > 65536) break;
+    }
 
     serveConnection(client, move(request));
     closesocket(client);
@@ -366,6 +410,61 @@ bool LocalHttpServer::serveConnection(SOCKET clientSocket, string requestText) {
       onScan_(code);
     }
     const auto response = responseText("200 OK", "application/json; charset=utf-8", scanCallbackMessage(code));
+    send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+    return true;
+  }
+
+  if (method == "POST" && (target == "/api/device/quantity" || target == "/api/device/status")) {
+    string expectedDevice;
+    string expectedToken;
+    {
+      lock_guard<mutex> lock(stateMutex_);
+      expectedDevice = pairedDeviceId_;
+      expectedToken = deviceToken_;
+    }
+    const auto suppliedToken = headerValue(headers, "X-HIMS-Token");
+    if (expectedToken.empty() || suppliedToken != expectedToken) {
+      const auto response = responseText("401 Unauthorized", "application/json; charset=utf-8",
+                                         statusResultJson(false, "Unauthorized device"));
+      send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+      return false;
+    }
+
+    if (target == "/api/device/quantity") {
+      DeviceQuantityRequest request;
+      string error;
+      if (!parseQuantityRequestJson(body, request, error) ||
+          (!expectedDevice.empty() && request.deviceId != expectedDevice)) {
+        if (error.empty()) error = "Device identity does not match the pairing";
+        const auto response = responseText("400 Bad Request", "application/json; charset=utf-8",
+                                           statusResultJson(false, error));
+        send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+        return false;
+      }
+      DeviceQuantityResult result;
+      if (onQuantity_) {
+        result = onQuantity_(request);
+      } else {
+        result.httpStatus = 503;
+        result.error = "Quantity service unavailable";
+      }
+      const auto response = responseText(httpStatusText(result.httpStatus), "application/json; charset=utf-8",
+                                         quantityResultJson(result));
+      send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+      return result.ok;
+    }
+
+    DeviceStatusReport report;
+    string error;
+    if (!parseStatusReportJson(body, report, error) || (!expectedDevice.empty() && report.deviceId != expectedDevice)) {
+      if (error.empty()) error = "Device identity does not match the pairing";
+      const auto response = responseText("400 Bad Request", "application/json; charset=utf-8",
+                                         statusResultJson(false, error));
+      send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+      return false;
+    }
+    if (onStatus_) onStatus_(report);
+    const auto response = responseText("200 OK", "application/json; charset=utf-8", statusResultJson(true));
     send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
     return true;
   }

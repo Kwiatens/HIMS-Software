@@ -274,7 +274,7 @@ ftxui::Color recentEventColor(const ActivityEntry& entry) {
 }
 
 DashboardSnapshot buildDashboardSnapshot(const vector<InventoryItem>& items, const vector<ActivityEntry>& activities,
-                                         bool scannerRunning, const string& scannerUrl, size_t recentEventLimit) {
+                                         bool scannerRunning, size_t recentEventLimit) {
   DashboardSnapshot snapshot;
   snapshot.itemCount = items.size();
   snapshot.recentEvents = recentEventEntries(activities, recentEventLimit);
@@ -339,7 +339,8 @@ DashboardSnapshot buildDashboardSnapshot(const vector<InventoryItem>& items, con
   }
 
   snapshot.devices = {
-      {"HIMS Scan", scannerRunning, false, scannerUrl,
+      {"HIMS Scan", scannerRunning, false, scannerRunning ? string("Scanner bridge ready")
+                                                            : string("Scanner bridge offline"),
        snapshot.lastScannedPart.empty() ? "Waiting for scans" : snapshot.lastScannedPart,
        scannerRunning ? string() : "Scanner server is not running"},
       {"Label Printer", false, false, "not configured", "No print jobs yet", "Printer integration pending"},
@@ -371,13 +372,12 @@ ftxui::Element App::renderDashboardUi() const {
   const int screenHeight = activeScreen != nullptr ? activeScreen->dimy() : 40;
   const size_t recentEventLimit = static_cast<size_t>(max(8, screenHeight - 16));
 
-  auto snapshot = buildDashboardSnapshot(store_.items(), activities_, server_.running(), scannerUrl(),
-                                         recentEventLimit);
+  auto snapshot = buildDashboardSnapshot(store_.items(), activities_, server_.running(), recentEventLimit);
   if (snapshot.devices.size() > 1) {
-    const auto configured = printerService_.configuredPrinterInfo();
-    snapshot.devices[1].connected = printerCheck_.ok && configured.has_value();
+    snapshot.devices[1].connected = printerService_.hasConfiguredPrinter();
     snapshot.devices[1].flashing = now <= printerFlashUntil_;
-    snapshot.devices[1].endpoint = configured ? configured->portName : printerService_.configuredPrinter();
+    snapshot.devices[1].endpoint = printerService_.hasConfiguredPrinter() ? string("Printer connected")
+                                                                          : string("Printer not configured");
     snapshot.devices[1].lastActivity = printerSummary();
     snapshot.devices[1].error = printerCheck_.ok
                                     ? string()
@@ -530,9 +530,11 @@ void App::handleDashboardKey(const KeyEvent& key) {
       case 'i':
         beginCsvImport();
         break;
+      case 'h':
+        chooseHimsFolder();
+        break;
       case 'u':
-        changePage(Page::Stock);
-        setMessage("Use/remove stock from the stock browser with +/-", 3);
+        openHimsScanSetup();
         break;
       case 'f':
         changePage(Page::Stock);

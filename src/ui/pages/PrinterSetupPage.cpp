@@ -115,12 +115,15 @@ string App::printerSummary() const {
     return "Printer: not configured";
   }
 
-  ostringstream out;
-  out << printerService_.configuredPrinter();
-  if (!printerCheck_.message.empty()) {
-    out << " [" << printerCheck_.message << "]";
+  if (printerCheck_.ok) {
+    return "Printer ready";
   }
-  return out.str();
+
+  if (!printerCheck_.message.empty()) {
+    return "Printer needs attention: " + printerCheck_.message;
+  }
+
+  return "Printer connected";
 }
 
 ftxui::Element App::renderPrinterSetupUi() const {

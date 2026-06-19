@@ -160,6 +160,22 @@ ftxui::Element App::renderStockUi() const {
 }
 
 void App::handleStockKey(const KeyEvent& key) {
+  if (key.type == KeyType::CtrlZ) {
+    undoLastInventoryChange();
+    return;
+  }
+  if (key.type == KeyType::Character) {
+    const auto ch = tolower(static_cast<unsigned char>(key.ch));
+    if (ch == 'u') {
+      undoLastInventoryChange();
+      return;
+    }
+    if (ch == 'h') {
+      chooseHimsFolder();
+      return;
+    }
+  }
+
   if (deleteConfirmationActive()) {
     if (key.type == KeyType::Enter) {
       confirmDeleteSelectedItem();

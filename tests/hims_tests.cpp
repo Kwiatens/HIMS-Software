@@ -1,4 +1,5 @@
 #include "core/Inventory.h"
+#include "core/HimsScanProtocol.h"
 #include "import/DigiKeyCsvImport.h"
 #include "label_printer/LabelPrinter.h"
 #include "ui/shared/AppUiShared.h"
@@ -486,6 +487,48 @@ int main() {
                        "123-ND,Acme,Missing manufacturer part,3\n";
     const auto result = parseDigiKeyCsvText(csv, {});
     assert(!result.ok);
+  }
+
+  {
+    DeviceQuantityRequest request;
+    string error;
+    assert(parseQuantityRequestJson(
+        R"({"deviceId":"r1-a","requestId":"req-1","code":"HIMS:R-00123","delta":-12})", request, error));
+    assert(request.delta == -12);
+    assert(!parseQuantityRequestJson(
+        R"({"deviceId":"r1-a","requestId":"req-2","code":"HIMS:R-00123","delta":0})", request, error));
+
+    InventoryStore store;
+    InventoryItem item;
+    item.id = "scan-r1-item";
+    item.himsId = "HIMS:R-00123";
+    item.partName = "10k resistor";
+    item.quantity = 5;
+    store.items().push_back(item);
+    request = {"r1-a", "req-3", "HIMS:R-00123", -12};
+    const auto clamped = applyDeviceQuantity(store, request);
+    assert(clamped.ok);
+    assert(clamped.requestedDelta == -12);
+    assert(clamped.appliedDelta == -5);
+    assert(clamped.quantity == 0);
+    request = {"r1-a", "req-4", "HIMS:R-99999", 2};
+    assert(applyDeviceQuantity(store, request).httpStatus == 404);
+    request = {"r1-a", "req-5", "308-1571-1-ND", 2};
+    assert(applyDeviceQuantity(store, request).httpStatus == 400);
+  }
+
+  {
+    const auto configPath = filesystem::temp_directory_path() / "hims-scan-config-test.conf";
+    const HimsScanConfig expected{"r1-test", string(64, 'a'), "192.168.1.2", 8080};
+    assert(saveHimsScanConfig(configPath, expected));
+    HimsScanConfig loaded;
+    assert(loadHimsScanConfig(configPath, loaded));
+    assert(loaded.deviceId == expected.deviceId);
+    assert(loaded.token == expected.token);
+    assert(loaded.fallbackHost == expected.fallbackHost);
+    assert(loaded.fallbackPort == expected.fallbackPort);
+    filesystem::remove(configPath);
+    assert(generateHimsScanToken().size() == 64);
   }
 
   {

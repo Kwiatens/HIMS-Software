@@ -4,23 +4,30 @@
 #pragma once
 
 #include "core/Inventory.h"
+#include "core/HimsScanProtocol.h"
 #include "import/DigiKeyCsvImport.h"
 #include "label_printer/LabelPrinter.h"
 #include "platform/Console.h"
 #include "platform/HttpServer.h"
+#include "platform/MdnsService.h"
 
 #include <ftxui/dom/elements.hpp>
 
 #include <cstddef>
+#include <condition_variable>
+#include <deque>
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace hims {
 
 std::filesystem::path documentsHimsPath();
+std::filesystem::path discoverHimsDataPath();
 std::filesystem::path legacyDatabasePath();
 void copyDatabaseSidecar(const std::filesystem::path& sourceBase,
                          const std::filesystem::path& destinationBase, const std::string& suffix);
@@ -38,6 +45,7 @@ class App {
     Stock,
     Detail,
     PrinterSetup,
+    HimsScanSetup,
     ImportCsv,
   };
 
@@ -76,6 +84,21 @@ class App {
     size_t originalIndex = 0;
   };
 
+  struct UndoSnapshot {
+    std::vector<InventoryItem> items;
+    std::vector<ActivityEntry> activities;
+    size_t selectedPosition = 0;
+    bool valid = false;
+  };
+
+  struct PendingDeviceQuantity {
+    DeviceQuantityRequest request;
+    DeviceQuantityResult result;
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool complete = false;
+  };
+
   void loadState();
   void saveState();
   void processInput();
@@ -84,6 +107,7 @@ class App {
   void handleStockKey(const KeyEvent& key);
   void handleDetailKey(const KeyEvent& key);
   void handlePrinterSetupKey(const KeyEvent& key);
+  void handleHimsScanSetupKey(const KeyEvent& key);
   void handleImportCsvKey(const KeyEvent& key);
   void handleSearchKey(const KeyEvent& key);
   void handleEditMenuKey(const KeyEvent& key);
@@ -103,6 +127,7 @@ class App {
   ftxui::Element renderStockUi() const;
   ftxui::Element renderDetailUi() const;
   ftxui::Element renderPrinterSetupUi() const;
+  ftxui::Element renderHimsScanSetupUi() const;
   ftxui::Element renderImportCsvUi() const;
   ftxui::Element renderSearchBarUi() const;
   ftxui::Element renderStatusBarUi() const;
@@ -117,6 +142,13 @@ class App {
   void openPrinterSetup();
   bool printSelectedLabel();
   std::string printerSummary() const;
+  void openHimsScanSetup();
+  void refreshHimsScanPorts();
+  bool provisionSelectedHimsScan();
+  DeviceQuantityResult enqueueDeviceQuantity(const DeviceQuantityRequest& request);
+  void enqueueDeviceStatus(const DeviceStatusReport& report);
+  void processDeviceRequests();
+  std::string himsScanDeviceSummary() const;
 
   std::vector<size_t> filteredIndices() const;
   size_t selectedIndex() const;
@@ -127,6 +159,7 @@ class App {
   void syncSelectionToFilter();
   void moveSelection(int delta);
   void changePage(Page page);
+  bool chooseHimsFolder();
   void armDeleteConfirmation();
   void cancelDeleteConfirmation();
   void clearDeleteConfirmationIfExpired();
@@ -143,6 +176,8 @@ class App {
   void commitEditField(EditField field, const std::string& value);
   void saveWorkingCopy();
   void adjustQuantity(int delta);
+  void captureUndoSnapshot();
+  bool undoLastInventoryChange();
   void logActivity(const std::string& kind, const std::string& message);
   void pushScanCode(const std::string& code);
   void processScans();
@@ -160,6 +195,7 @@ class App {
   std::string fieldLabel(EditField field) const;
   std::string currentFieldValue(EditField field) const;
   std::vector<FieldOption> fieldOptions() const;
+  std::string softwareVersion() const;
   std::string itemDetailText(const InventoryItem& item, int width) const;
   std::string summaryLine() const;
   std::string scannerUrl() const;
@@ -172,11 +208,13 @@ class App {
   std::vector<PrinterQueueInfo> printerQueues_;
   PrinterCheckResult printerCheck_;
   LocalHttpServer server_;
+  MdnsService mdnsService_;
   std::filesystem::path root_;
   std::filesystem::path dataPath_;
   std::filesystem::path inventoryPath_;
   std::filesystem::path printerPath_;
   std::filesystem::path activityPath_;
+  std::filesystem::path himsScanConfigPath_;
   Page page_ = Page::Dashboard;
   InputMode inputMode_ = InputMode::None;
   std::string searchQuery_;
@@ -192,10 +230,29 @@ class App {
   std::filesystem::path importSourcePath_;
   std::vector<InventoryHistoryPoint> inventoryHistory_;
   std::mutex scanMutex_;
+  HimsScanConfig himsScanConfig_;
+  std::mutex deviceQueueMutex_;
+  std::vector<std::shared_ptr<PendingDeviceQuantity>> deviceQuantityQueue_;
+  std::vector<DeviceStatusReport> deviceStatusQueue_;
+  std::unordered_map<std::string, DeviceQuantityResult> deviceRequestCache_;
+  std::deque<std::string> deviceRequestOrder_;
+  time_t deviceLastSeen_ = 0;
+  std::string deviceFirmwareVersion_;
+  int deviceRssi_ = 0;
+  std::string deviceLastResult_;
+  std::vector<std::string> himsScanPorts_;
+  size_t himsScanPortSelection_ = 0;
+  std::vector<std::string> himsScanAddresses_;
+  size_t himsScanAddressSelection_ = 0;
+  int himsScanSetupField_ = 0;
+  std::string himsScanSsid_;
+  std::string himsScanPassword_;
+  std::string himsScanSetupInput_;
   bool running_ = true;
   bool dirty_ = true;
   ConsoleSize lastDrawSize_{};
   WorkingCopy workingCopy_;
+  UndoSnapshot undoSnapshot_;
   bool editingImportCandidate_ = false;
   size_t importEditIndex_ = 0;
   size_t importSelection_ = 0;

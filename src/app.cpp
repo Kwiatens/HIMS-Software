@@ -41,6 +41,9 @@ KeyEvent translateEvent(const ftxui::Event& event) {
   if (event == ftxui::Event::CtrlH) {
     return {KeyType::CtrlBackspace, '\0'};
   }
+  if (event == ftxui::Event::CtrlZ) {
+    return {KeyType::CtrlZ, '\0'};
+  }
   if (event == ftxui::Event::Backspace) {
     if (controlModifierPressed()) {
       return {KeyType::CtrlBackspace, '\0'};
@@ -85,19 +88,25 @@ KeyEvent translateEvent(const ftxui::Event& event) {
 
 App::App()
     : root_(filesystem::current_path()),
-      dataPath_(documentsHimsPath()),
+      dataPath_(discoverHimsDataPath()),
       inventoryPath_(dataPath_ / "inventory.db"),
       printerPath_(dataPath_ / "printer.conf"),
-      activityPath_(dataPath_ / "activity.tsv") {
+      activityPath_(dataPath_ / "activity.tsv"),
+      himsScanConfigPath_(dataPath_ / "hims_scan.conf") {
   loadEnvironmentFile(locateDotEnvFile());
   ensureInventoryDatabaseCopied(inventoryPath_);
   loadState();
+  loadHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
+  server_.setDeviceCredentials(himsScanConfig_.deviceId, himsScanConfig_.token);
 
   if (!server_.start(8080, filesystem::current_path() / "scanner.html",
-                     [this](const string& code) { pushScanCode(code); })) {
+                     [this](const string& code) { pushScanCode(code); },
+                     [this](const DeviceQuantityRequest& request) { return enqueueDeviceQuantity(request); },
+                     [this](const DeviceStatusReport& report) { enqueueDeviceStatus(report); })) {
     setMessage("Scanner server failed to start; terminal still works", 5);
   } else {
-    setMessage("Scanner ready at " + scannerUrl(), 5);
+    mdnsService_.start(server_.port());
+    setMessage("Scanner companion page ready", 5);
   }
 }
 
@@ -108,13 +117,25 @@ ftxui::Element App::renderUi() const {
 
   ftxui::Elements body;
   body.push_back(ftxui::hbox({
-                     styledText("HIMS Terminal  " + summaryLine(), uiTitleColor(), uiPanelLeftBg()) | ftxui::bold,
+                     styledText("HIMS Terminal v" + softwareVersion() + "  " + summaryLine(), uiTitleColor(),
+                                uiPanelLeftBg()) |
+                         ftxui::bold,
                      ftxui::filler(),
                      statusCueChip("HIMS Scan", server_.running(), scannerFlashing,
-                                   server_.running() ? uiTitleColor() : uiWarnColor()),
+                                   server_.running() ? uiTitleColor() : uiWarnColor(), ftxui::Color::RGB(28, 36, 44),
+                                   ftxui::Color::RGB(28, 66, 40), ftxui::Color::RGB(44, 26, 20)),
+                     ftxui::separator(),
+                     styledText(ellipsize(himsScanDeviceSummary(), 48),
+                                deviceLastSeen_ > 0 && time(nullptr) - deviceLastSeen_ <= 15 ? uiSuccessColor()
+                                                                                           : uiMutedColor(),
+                                ftxui::Color::RGB(28, 36, 44)) | ftxui::bold,
                      ftxui::separator(),
                      statusCueChip("Printer", printerService_.hasConfiguredPrinter(), printerFlashing,
-                                   printerService_.hasConfiguredPrinter() ? uiAccentColor() : uiWarnColor()),
+                                   printerCheck_.ok ? uiSuccessColor()
+                                                    : (printerService_.hasConfiguredPrinter() ? uiAccentColor()
+                                                                                              : uiWarnColor()),
+                                   ftxui::Color::RGB(82, 50, 18), ftxui::Color::RGB(28, 78, 42),
+                                   ftxui::Color::RGB(44, 26, 20)),
                  }) |
                  ftxui::bgcolor(uiPanelLeftBg()));
   body.push_back(ftxui::separator());
@@ -136,6 +157,8 @@ ftxui::Element App::renderPageUi() const {
       return renderDetailUi();
     case Page::PrinterSetup:
       return renderPrinterSetupUi();
+    case Page::HimsScanSetup:
+      return renderHimsScanSetupUi();
     case Page::ImportCsv:
       return renderImportCsvUi();
   }
@@ -162,7 +185,7 @@ ftxui::Element App::renderSearchBarUi() const {
     options.push_back(footerField("Edit fields", "", uiAccentColor(), uiMutedColor(), uiPanelLeftBg()));
     for (size_t index = 0; index < menuOptions_.size(); ++index) {
       const auto bg = static_cast<int>(index) == fieldMenuIndex_ ? uiRowSelectedBg() : (index % 2 == 0 ? uiRowDarkBg() : uiRowLightBg());
-      auto option = fullLine("  [" + to_string(index < 9 ? index + 1 : 0) + "] " + menuOptions_[index].label,
+      auto option = fullLine("  " + menuOptions_[index].label,
                              static_cast<int>(index) == fieldMenuIndex_ ? uiTitleColor() : uiMutedColor(), bg);
       if (static_cast<int>(index) == fieldMenuIndex_) {
         option = option | ftxui::select;
@@ -176,12 +199,67 @@ ftxui::Element App::renderSearchBarUi() const {
 }
 
 ftxui::Element App::renderStatusBarUi() const {
+  const auto summary = shortcutSummary();
+
+  vector<string> segments;
+  size_t start = 0;
+  while (start <= summary.size()) {
+    const auto separator = summary.find(" | ", start);
+    const auto chunk = trim(summary.substr(start, separator == string::npos ? string::npos : separator - start));
+    if (!chunk.empty()) {
+      segments.push_back(chunk);
+    }
+    if (separator == string::npos) {
+      break;
+    }
+    start = separator + 3;
+  }
+
+  auto segmentColor = [](const string& segment) {
+    const auto lower = toLower(segment);
+    if (lower.find("quit") != string::npos) {
+      return uiDangerColor();
+    }
+    if (lower.find("esc") != string::npos) {
+      return uiWarnColor();
+    }
+    if (lower.find("enter") != string::npos) {
+      return uiSuccessColor();
+    }
+    if (lower.find("scanner") != string::npos || lower.find("search") != string::npos) {
+      return uiLinkColor();
+    }
+    if (lower.find("printer") != string::npos || lower.find("print") != string::npos) {
+      return uiAccentColor();
+    }
+    if (lower.find("import") != string::npos || lower.find("add") != string::npos) {
+      return uiTitleColor();
+    }
+    return uiInfoColor();
+  };
+
+  ftxui::Elements actions;
+  for (size_t index = 0; index < segments.size(); ++index) {
+    if (index > 0) {
+      actions.push_back(styledText(" • ", uiDimColor()));
+    }
+    actions.push_back(styledText(" " + segments[index] + " ", segmentColor(segments[index]), uiRowDarkBg()) |
+                      ftxui::bold);
+  }
+
+  const auto scannerStatus = server_.running() ? "Scanner bridge ready" : "Scanner bridge offline";
+  const auto printerStatus = printerService_.hasConfiguredPrinter()
+                                 ? (printerCheck_.ok ? "Printer ready" : "Printer needs attention")
+                                 : "Printer not configured";
+
   return ftxui::hbox({
-             styledText(scannerUrl(), uiLinkColor()),
+             styledText(scannerStatus, server_.running() ? uiInfoColor() : uiWarnColor()),
              ftxui::filler(),
-             styledText(ellipsize(printerSummary(), 44), uiAccentColor()),
+             ftxui::hbox(move(actions)),
              ftxui::filler(),
-             styledText(shortcutSummary(), uiDimColor()),
+             styledText(printerStatus, printerService_.hasConfiguredPrinter()
+                                           ? (printerCheck_.ok ? uiSuccessColor() : uiWarnColor())
+                                           : uiMutedColor()),
          }) |
          ftxui::bgcolor(uiPanelRightBg());
 }
@@ -196,11 +274,13 @@ ftxui::Element App::renderMessageUi() const {
 int App::run() {
   running_ = true;
   auto screen = ftxui::ScreenInteractive::Fullscreen();
+  screen.ForceHandleCtrlZ(false);
   screen.TrackMouse();
   auto renderer = ftxui::Renderer([this] { return renderUi(); });
   auto component = ftxui::CatchEvent(renderer, [this, &screen](ftxui::Event event) {
     if (event == ftxui::Event::Custom) {
       processScans();
+      processDeviceRequests();
       clearMessageIfExpired();
       clearDeleteConfirmationIfExpired();
       return true;
@@ -246,6 +326,7 @@ int App::run() {
     ticker.join();
   }
   saveState();
+  mdnsService_.stop();
   server_.stop();
   return 0;
 }
@@ -283,6 +364,9 @@ void App::handleKey(const KeyEvent& key) {
       break;
     case Page::PrinterSetup:
       handlePrinterSetupKey(key);
+      break;
+    case Page::HimsScanSetup:
+      handleHimsScanSetupKey(key);
       break;
     case Page::ImportCsv:
       handleImportCsvKey(key);
@@ -322,26 +406,6 @@ void App::handleSearchKey(const KeyEvent& key) {
 
 void App::handleEditMenuKey(const KeyEvent& key) {
   if (key.type == KeyType::Character) {
-    const auto ch = tolower(static_cast<unsigned char>(key.ch));
-    if (ch >= '1' && ch <= '9') {
-      fieldMenuIndex_ = ch - '1';
-      if (fieldMenuIndex_ < static_cast<int>(menuOptions_.size())) {
-        inputBuffer_ = currentFieldValue(menuOptions_[fieldMenuIndex_].field);
-        inputMode_ = InputMode::EditValue;
-        setMessage("Editing " + fieldLabel(menuOptions_[fieldMenuIndex_].field), 2);
-      }
-      return;
-    }
-    if (ch == '0' && menuOptions_.size() >= 10) {
-      fieldMenuIndex_ = 9;
-      inputBuffer_ = currentFieldValue(menuOptions_[fieldMenuIndex_].field);
-      inputMode_ = InputMode::EditValue;
-      setMessage("Editing " + fieldLabel(menuOptions_[fieldMenuIndex_].field), 2);
-      return;
-    }
-    if (ch == 'q' || ch == 'c') {
-      cancelInput();
-    }
     return;
   }
 

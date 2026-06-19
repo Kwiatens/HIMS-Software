@@ -63,8 +63,20 @@ ftxui::Element App::renderDetailUi() const {
 }
 
 void App::handleDetailKey(const KeyEvent& key) {
+  if (key.type == KeyType::CtrlZ) {
+    undoLastInventoryChange();
+    return;
+  }
   if (key.type == KeyType::Character) {
     const auto ch = tolower(static_cast<unsigned char>(key.ch));
+    if (ch == 'u') {
+      undoLastInventoryChange();
+      return;
+    }
+    if (ch == 'h') {
+      chooseHimsFolder();
+      return;
+    }
     switch (ch) {
       case 'e':
         beginEditCurrentItem(false);

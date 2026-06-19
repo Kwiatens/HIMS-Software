@@ -17,6 +17,28 @@ filesystem::path documentsHimsPath() {
   return filesystem::current_path() / "Documents" / "HIMS";
 }
 
+filesystem::path discoverHimsDataPath() {
+  error_code error;
+  const auto defaultPath = documentsHimsPath();
+  vector<filesystem::path> candidates = {defaultPath};
+  const auto addCandidate = [&](const char* envName) {
+    if (const char* value = getenv(envName); value != nullptr && *value != '\0') {
+      candidates.push_back(filesystem::path(value) / "Documents" / "HIMS");
+    }
+  };
+  addCandidate("OneDrive");
+  addCandidate("OneDriveConsumer");
+  addCandidate("OneDriveCommercial");
+
+  for (const auto& candidate : candidates) {
+    if (filesystem::exists(candidate / "inventory.db", error)) {
+      return candidate;
+    }
+  }
+
+  return defaultPath;
+}
+
 filesystem::path legacyDatabasePath() {
   const auto githubRoot = filesystem::current_path().parent_path().parent_path();
   return githubRoot / "Kwiatens Stock Management System" / "KwiatensStockManagementSystem" / "data" / "kwiatens-stock.db";
