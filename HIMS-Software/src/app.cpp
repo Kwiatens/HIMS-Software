@@ -95,8 +95,8 @@ App::App()
       himsScanConfigPath_(dataPath_ / "hims_scan.conf") {
   loadEnvironmentFile(locateDotEnvFile());
   ensureInventoryDatabaseCopied(inventoryPath_);
-  loadState();
   loadHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
+  loadState();
   server_.setDeviceCredentials(himsScanConfig_.deviceId, himsScanConfig_.token);
 
   if (!server_.start(8080, filesystem::current_path() / "scanner.html",

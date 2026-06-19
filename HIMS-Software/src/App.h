@@ -143,8 +143,8 @@ class App {
   bool printSelectedLabel();
   std::string printerSummary() const;
   void openHimsScanSetup();
-  void refreshHimsScanPorts();
-  bool provisionSelectedHimsScan();
+  bool regenerateHimsScanToken();
+  bool clearHimsScanPairing();
   DeviceQuantityResult enqueueDeviceQuantity(const DeviceQuantityRequest& request);
   void enqueueDeviceStatus(const DeviceStatusReport& report);
   void processDeviceRequests();
@@ -240,14 +240,6 @@ class App {
   std::string deviceFirmwareVersion_;
   int deviceRssi_ = 0;
   std::string deviceLastResult_;
-  std::vector<std::string> himsScanPorts_;
-  size_t himsScanPortSelection_ = 0;
-  std::vector<std::string> himsScanAddresses_;
-  size_t himsScanAddressSelection_ = 0;
-  int himsScanSetupField_ = 0;
-  std::string himsScanSsid_;
-  std::string himsScanPassword_;
-  std::string himsScanSetupInput_;
   bool running_ = true;
   bool dirty_ = true;
   ConsoleSize lastDrawSize_{};

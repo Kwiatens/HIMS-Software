@@ -6,8 +6,10 @@
 
 #include <cstdlib>
 #include <cassert>
+#include <deque>
 #include <filesystem>
 #include <iostream>
+#include <unordered_map>
 
 using namespace hims;
 using namespace std;
@@ -540,6 +542,28 @@ int main() {
         store.load(dbPath);
       }
     }
+  }
+
+  {
+    InventoryStore store;
+    InventoryItem item;
+    item.id = "scan-r1-item";
+    item.himsId = "HIMS:R-00123";
+    item.partName = "10k resistor";
+    item.quantity = 5;
+    store.items().push_back(item);
+
+    DeviceQuantityRequest request{"r1-a", "req-9", "HIMS:R-00123", -2};
+    unordered_map<string, DeviceQuantityResult> cache;
+    deque<string> order;
+    const auto first = applyDeviceQuantityCached(store, request, cache, order);
+    const auto second = applyDeviceQuantityCached(store, request, cache, order);
+    assert(first.ok);
+    assert(second.ok);
+    assert(first.appliedDelta == -2);
+    assert(second.appliedDelta == -2);
+    assert(store.items().front().quantity == 3);
+    assert(statusResultJson(false, "Unauthorized device").find("Unauthorized device") != string::npos);
   }
 
   cout << "HIMS core tests passed\n";

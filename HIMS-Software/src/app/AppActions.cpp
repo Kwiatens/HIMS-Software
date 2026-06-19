@@ -215,6 +215,9 @@ void App::loadState() {
   // DigiKey metadata is fetched on demand during scan-driven workflows, not at startup.
 
   server_.setRecentActivity(activities_);
+  if (trim(himsScanConfig_.token).empty()) {
+    himsScanConfig_.token = generateHimsScanToken();
+  }
 
   error_code error;
   const bool inventoryFileExists = filesystem::exists(inventoryPath_, error);
@@ -222,6 +225,7 @@ void App::loadState() {
     store_.save(inventoryPath_);
   }
   printerService_.saveConfig(printerPath_);
+  saveHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
   saveActivities(activityPath_, activities_);
 }
 
@@ -274,8 +278,12 @@ bool App::chooseHimsFolder() {
   page_ = Page::Dashboard;
   dirty_ = true;
 
-  loadState();
   loadHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
+  loadState();
+  if (trim(himsScanConfig_.token).empty()) {
+    himsScanConfig_.token = generateHimsScanToken();
+    saveHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
+  }
   server_.setDeviceCredentials(himsScanConfig_.deviceId, himsScanConfig_.token);
   setMessage("Loaded HIMS folder: " + dataPath_.string(), 4);
   return true;
@@ -740,38 +748,35 @@ void App::processDeviceRequests() {
     deviceLastSeen_ = time(nullptr);
     deviceFirmwareVersion_ = status.firmwareVersion;
     deviceRssi_ = status.rssi;
+    if (trim(himsScanConfig_.deviceId).empty() && !trim(status.deviceId).empty()) {
+      himsScanConfig_.deviceId = trim(status.deviceId);
+      saveHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
+      server_.setDeviceCredentials(himsScanConfig_.deviceId, himsScanConfig_.token);
+    }
     dirty_ = true;
   }
 
   for (const auto& pending : quantities) {
-    DeviceQuantityResult result;
-    const auto cached = deviceRequestCache_.find(pending->request.requestId);
-    if (cached != deviceRequestCache_.end()) {
-      result = cached->second;
+    bool pairingChanged = false;
+    if (trim(himsScanConfig_.deviceId).empty() && !trim(pending->request.deviceId).empty()) {
+      himsScanConfig_.deviceId = trim(pending->request.deviceId);
+      pairingChanged = true;
+    }
+    const auto result = applyDeviceQuantityCached(store_, pending->request, deviceRequestCache_, deviceRequestOrder_);
+    if (pairingChanged) {
+      saveHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
+      server_.setDeviceCredentials(himsScanConfig_.deviceId, himsScanConfig_.token);
+    }
+    if (result.ok) {
+      logActivity(result.appliedDelta < 0 ? "usage scan" : "stock scan",
+                  result.item + " quantity changed by " + to_string(result.appliedDelta) +
+                      " to " + to_string(result.quantity));
+      saveState();
+      scannerFlashUntil_ = time(nullptr) + 3;
+      deviceLastResult_ = (result.appliedDelta >= 0 ? "+" : "") + to_string(result.appliedDelta) +
+                          " " + result.item + " QTY " + to_string(result.quantity);
     } else {
-      const auto* existing = store_.findByCode(pending->request.code);
-      if (isHimsId(trim(pending->request.code)) && existing != nullptr &&
-          toLower(trim(existing->himsId)) == toLower(trim(pending->request.code))) {
-        captureUndoSnapshot();
-      }
-      result = applyDeviceQuantity(store_, pending->request);
-      if (result.ok) {
-        logActivity(result.appliedDelta < 0 ? "usage scan" : "stock scan",
-                    result.item + " quantity changed by " + to_string(result.appliedDelta) +
-                        " to " + to_string(result.quantity));
-        saveState();
-        scannerFlashUntil_ = time(nullptr) + 3;
-        deviceLastResult_ = (result.appliedDelta >= 0 ? "+" : "") + to_string(result.appliedDelta) +
-                            " " + result.item + " QTY " + to_string(result.quantity);
-      } else {
-        deviceLastResult_ = "ERROR " + result.error;
-      }
-      deviceRequestCache_[pending->request.requestId] = result;
-      deviceRequestOrder_.push_back(pending->request.requestId);
-      while (deviceRequestOrder_.size() > 64) {
-        deviceRequestCache_.erase(deviceRequestOrder_.front());
-        deviceRequestOrder_.pop_front();
-      }
+      deviceLastResult_ = "ERROR " + result.error;
     }
     deviceLastSeen_ = time(nullptr);
     dirty_ = true;
@@ -785,7 +790,8 @@ void App::processDeviceRequests() {
 }
 
 string App::himsScanDeviceSummary() const {
-  if (!himsScanConfig_.paired()) return "R1 NOT PAIRED";
+  if (trim(himsScanConfig_.token).empty()) return "R1 UNPAIRED";
+  if (trim(himsScanConfig_.deviceId).empty()) return "R1 WAITING FOR DEVICE";
   if (deviceLastSeen_ == 0 || time(nullptr) - deviceLastSeen_ > 15) return "R1 OFFLINE";
   if (!deviceLastResult_.empty()) return "R1 ONLINE  " + deviceLastResult_;
   return "R1 ONLINE  RSSI " + to_string(deviceRssi_);
@@ -1155,13 +1161,13 @@ string App::shortcutSummary() const {
 
   switch (page_) {
     case Page::Dashboard:
-      return "Dashboard: '1' stock | '2' scanner | '3' add | '5/i' import | 'u' Scan R1 setup | 'h' HIMS folder | 'l' printer | '/' search | 'q' quit";
+      return "Dashboard: '1' stock | '2' scanner | '3' add | '5/i' import | 'u' Scan R1 pairing | 'h' HIMS folder | 'l' printer | '/' search | 'q' quit";
     case Page::Stock:
       return "Stock: 'Tab'/'1' dashboard | 'Enter' detail | 'e' edit | 'n' new | 'Ctrl+Backspace' delete | 'Ctrl+Z' undo | 'h' HIMS folder | 'p' print | '+/-' qty | '/' search | 's' scanner | 'q' quit";
     case Page::Detail:
       return "Detail: 'Esc' stock | 'e' edit | 'p' print | '+/-' qty | 'Ctrl+Z' undo | 'h' HIMS folder | '/' search | 's' scanner | 'q' quit";
     case Page::HimsScanSetup:
-      return "Scan R1 setup: arrows choose | Enter next/provision | r refresh ports | Esc cancel";
+      return "Scan R1 pairing: 'r' regenerate token | 'c' clear device | 'o' open scanner | Esc dashboard";
     case Page::ImportCsv:
       if (importSyncPrompt_) {
         return "Import sync: 'Enter'/'y' sync with DigiKey API | 'n'/'Esc' finish";

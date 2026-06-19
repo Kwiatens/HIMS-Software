@@ -5,9 +5,12 @@
 
 #include "core/Inventory.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 
 namespace hims {
 
@@ -50,6 +53,10 @@ std::string generateHimsScanToken();
 bool parseQuantityRequestJson(const std::string& body, DeviceQuantityRequest& request, std::string& error);
 bool parseStatusReportJson(const std::string& body, DeviceStatusReport& report, std::string& error);
 DeviceQuantityResult applyDeviceQuantity(InventoryStore& store, const DeviceQuantityRequest& request);
+DeviceQuantityResult applyDeviceQuantityCached(
+    InventoryStore& store, const DeviceQuantityRequest& request,
+    std::unordered_map<std::string, DeviceQuantityResult>& cache, std::deque<std::string>& order,
+    std::size_t maxEntries = 64);
 std::string quantityResultJson(const DeviceQuantityResult& result);
 std::string statusResultJson(bool ok, const std::string& error = {});
 

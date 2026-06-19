@@ -111,7 +111,7 @@ string hexToken(const array<unsigned char, 32>& bytes) {
 }  // namespace
 
 bool HimsScanConfig::paired() const {
-  return !trim(deviceId).empty() && token.size() >= 32;
+  return !trim(token).empty() && token.size() >= 32;
 }
 
 bool loadHimsScanConfig(const filesystem::path& path, HimsScanConfig& config) {
@@ -126,8 +126,8 @@ bool loadHimsScanConfig(const filesystem::path& path, HimsScanConfig& config) {
     const auto value = trim(line.substr(separator + 1));
     if (key == "device_id") loaded.deviceId = value;
     else if (key == "token") loaded.token = value;
-    else if (key == "fallback_host") loaded.fallbackHost = value;
-    else if (key == "fallback_port") {
+    else if (key == "fallback_host" || key == "server_host") loaded.fallbackHost = value;
+    else if (key == "fallback_port" || key == "server_port") {
       try {
         const auto port = stoul(value);
         if (port <= 65535) loaded.fallbackPort = static_cast<uint16_t>(port);
@@ -220,6 +220,24 @@ DeviceQuantityResult applyDeviceQuantity(InventoryStore& store, const DeviceQuan
   result.item = item->partName;
   result.appliedDelta = newQuantity - oldQuantity;
   result.quantity = newQuantity;
+  return result;
+}
+
+DeviceQuantityResult applyDeviceQuantityCached(InventoryStore& store, const DeviceQuantityRequest& request,
+                                               unordered_map<string, DeviceQuantityResult>& cache,
+                                               deque<string>& order, size_t maxEntries) {
+  const auto cached = cache.find(request.requestId);
+  if (cached != cache.end()) {
+    return cached->second;
+  }
+
+  const auto result = applyDeviceQuantity(store, request);
+  cache[request.requestId] = result;
+  order.push_back(request.requestId);
+  while (order.size() > maxEntries) {
+    cache.erase(order.front());
+    order.pop_front();
+  }
   return result;
 }
 
