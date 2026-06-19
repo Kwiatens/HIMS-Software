@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Keypad.h>
-#include "config/pins.h"
+
+#include "config/config.h"
 #include "keypad.h"
 
 static char KeyTable[4][4] = {
@@ -10,34 +11,70 @@ static char KeyTable[4][4] = {
   {'*', '0', '#', 'D'}
 };
 
-// Arduino pins connected to keypad rows
-static byte rowPins[4] = {KEYPAD_ROW_1, KEYPAD_ROW_2, KEYPAD_ROW_3, KEYPAD_ROW_4};
+static byte KEYPAD_ROW_PINS[4] = {
+  KEYPAD_ROW_1_PIN,
+  KEYPAD_ROW_2_PIN,
+  KEYPAD_ROW_3_PIN,
+  KEYPAD_ROW_4_PIN
+};
 
-// Arduino pins connected to keypad columns
-static byte colPins[4] = {KEYPAD_COL_1, KEYPAD_COL_2, KEYPAD_COL_3, KEYPAD_COL_4};
+static byte KEYPAD_COLUMN_PINS[4] = {
+  KEYPAD_COLUMN_1_PIN,
+  KEYPAD_COLUMN_2_PIN,
+  KEYPAD_COLUMN_3_PIN,
+  KEYPAD_COLUMN_4_PIN
+};
 
-static Keypad keypad = Keypad(makeKeymap(KeyTable), rowPins, colPins, 4, 4);
-
-static char lastKey = 0;
+static Keypad keypad = Keypad(makeKeymap(KeyTable), KEYPAD_ROW_PINS, KEYPAD_COLUMN_PINS, 4, 4);
 
 void keypadInit() {
-  keypad.addEventListener([](char key) {
-    lastKey = key;
-  });
+  keypad.setDebounceTime(20);
+
+  Serial.print("Keypad rows: ");
+  for (byte i = 0; i < 4; i++) {
+    if (i > 0) {
+      Serial.print(", ");
+    }
+    Serial.print(KEYPAD_ROW_PINS[i]);
+  }
+  Serial.print(" | cols: ");
+  for (byte i = 0; i < 4; i++) {
+    if (i > 0) {
+      Serial.print(", ");
+    }
+    Serial.print(KEYPAD_COLUMN_PINS[i]);
+  }
+  Serial.println();
 }
 
-void keypadUpdate() {
-  char key = keypad.getKey();
+bool keypadPoll(HimsKeyEvent& event) {
+  event = {};
+  const char key = keypad.getKey();
+  if (!key) {
+    return false;
+  }
 
-  if (key) {
-    lastKey = key;
+  Serial.print("Key pressed: ");
+  Serial.println(key);
 
-    Serial.print("Key pressed: ");
-    Serial.println(key);
-  } 
-}
-
-char keypadGetLastKey() {
-    return lastKey;
+  event.value = key;
+  if (key >= '0' && key <= '9') {
+    event.type = HimsKeyEventType::Digit;
+    return true;
+  }
+  if (key == 'A') {
+    event.type = HimsKeyEventType::Add;
+    return true;
+  }
+  if (key == 'B') {
+    event.type = HimsKeyEventType::Subtract;
+    return true;
+  }
+  if (key == 'C') {
+    event.type = HimsKeyEventType::Cancel;
+    return true;
+  }
+  event.type = HimsKeyEventType::Other;
+  return true;
 }
 

@@ -1,0 +1,229 @@
+#include "app/hims_scan_app.h"
+
+#include "HimsScanCore.h"
+#include "config/config.h"
+
+#include <WiFi.h>
+
+namespace hims_scan {
+
+bool HimsScanApp::begin() {
+  Serial.println("HIMS Scan R1 booting");
+  keypadInit();
+  scanner_.begin(9600);
+  scanner_.flushInput();
+
+  clientConfig_.deviceId = DEVICE_ID;
+  clientConfig_.token = DEVICE_TOKEN;
+  clientConfig_.fallbackHost = FALLBACK_HOST;
+  clientConfig_.fallbackPort = FALLBACK_PORT;
+
+  outbox_.begin("hims_scan", DEVICE_ID);
+  outbox_.load();
+
+  client_.begin(clientConfig_);
+  wifiStarted_ = true;
+
+  if (!WIFI_AUTOSTART) {
+    Serial.println("Wi-Fi auto-start disabled; running offline for keypad/scanner testing.");
+  } else {
+    Serial.println("Wi-Fi will connect from the main loop.");
+  }
+
+  logState("boot");
+  return true;
+}
+
+void HimsScanApp::loop() {
+  // Drain UART before any Wi-Fi operation that may briefly block.
+  pollScanner();
+  reconnectWiFi();
+
+  HimsKeyEvent event;
+  while (keypadPoll(event)) {
+    handleKey(event);
+  }
+
+  const bool quantitySent = flushQueue();
+  if (!quantitySent) {
+    maybeSendStatus();
+  }
+  // Drain anything received while the HTTP client was active.
+  pollScanner();
+  delay(2);
+}
+
+void HimsScanApp::pollScanner() {
+  String code;
+  if (scanner_.poll(code)) {
+    handleScan(code);
+  }
+}
+
+void HimsScanApp::handleScan(const String& code) {
+  // Some GM65 profiles prepend an AIM symbology identifier (for example ]C1
+  // for Code 128 or ]Q3 for QR). Normalize that away before handing the code
+  // to the rest of the app.
+  const auto trimmed = trimCopy(stripAimSymbologyPrefix(code));
+  if (trimmed.length() == 0) {
+    return;
+  }
+
+  scannedCode_ = trimmed;
+  quantity_.clear();
+  setAwaitingQuantity();
+  Serial.print("GM65 scan: ");
+  Serial.println(scannedCode_.c_str());
+  Serial.println("Enter quantity, then press A to add or B to subtract. C cancels.");
+}
+
+void HimsScanApp::handleKey(const HimsKeyEvent& event) {
+  if (event.type == HimsKeyEventType::Digit) {
+    if (state_ == State::Idle) {
+      Serial.println("Digit ignored, scan a code first.");
+      return;
+    }
+    quantity_.appendDigit(event.value);
+    Serial.print("Quantity: ");
+    Serial.println(quantity_.displayText().c_str());
+    return;
+  }
+
+  if (event.type == HimsKeyEventType::Cancel) {
+    resetPending();
+    Serial.println("Cancelled pending scan.");
+    return;
+  }
+
+  if (event.type == HimsKeyEventType::Add || event.type == HimsKeyEventType::Subtract) {
+    if (state_ == State::Idle || scannedCode_.length() == 0) {
+      Serial.println("No scanned code to submit.");
+      return;
+    }
+    submitCurrent(event.type == HimsKeyEventType::Add ? 'A' : 'B');
+  }
+}
+
+void HimsScanApp::submitCurrent(char action) {
+  const auto delta = quantity_.consume(action == 'A');
+  QuantityRequest request;
+  request.deviceId = clientConfig_.deviceId;
+  request.sequence = outbox_.nextSequence();
+  request.requestId = makeRequestId(clientConfig_.deviceId, request.sequence);
+  request.code = scannedCode_;
+  request.delta = delta;
+
+  outbox_.setNextSequence(request.sequence + 1U);
+  if (!outbox_.enqueue(request)) {
+    Serial.println("Failed to queue request.");
+    return;
+  }
+
+  Serial.print("Queued request: ");
+  Serial.println(buildQuantityRequestJson(request.deviceId, request.requestId, request.code, request.delta).c_str());
+  resetPending();
+  flushQueue();
+}
+
+bool HimsScanApp::flushQueue() {
+  if (millis() - lastFlushAttempt_ < FLUSH_INTERVAL_MS) {
+    return false;
+  }
+  lastFlushAttempt_ = millis();
+
+  if (!WiFi.isConnected()) {
+    return false;
+  }
+
+  if (!client_.resolveEndpoint()) {
+    return false;
+  }
+
+  QuantityRequest request;
+  if (!outbox_.peek(request)) {
+    return false;
+  }
+
+  int status = 0;
+  String body;
+  const auto ok = client_.postQuantity(request, status, body);
+  Serial.print("POST /api/device/quantity -> ");
+  Serial.println(ok ? "sent" : "failed");
+  if (!ok || status < 200 || status >= 300) {
+    Serial.print("Response body: ");
+    Serial.println(body.c_str());
+    return false;
+  }
+
+  Serial.print("Applied quantity delta for ");
+  Serial.print(request.code.c_str());
+  Serial.print(" status ");
+  Serial.println(status);
+  outbox_.pop(request);
+  return true;
+}
+
+void HimsScanApp::reconnectWiFi() {
+  if (!wifiStarted_) {
+    return;
+  }
+
+  if (!WIFI_AUTOSTART) {
+    return;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  if (millis() - lastReconnectAttempt_ < WIFI_RECONNECT_INTERVAL_MS) {
+    return;
+  }
+  lastReconnectAttempt_ = millis();
+
+  if (trimCopy(WIFI_SSID).length() == 0) {
+    Serial.println("Wi-Fi credentials are empty; staying offline.");
+    return;
+  }
+
+  Serial.print("Connecting to Wi-Fi SSID: ");
+  Serial.println(WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+
+void HimsScanApp::maybeSendStatus() {
+  if (!outbox_.empty()) {
+    // Prioritize queued quantity updates over a heartbeat so the device keeps
+    // making forward progress when Wi-Fi is slow or the PC is busy.
+    return;
+  }
+  if (!WiFi.isConnected()) {
+    return;
+  }
+  if (millis() - lastStatusAttempt_ < STATUS_INTERVAL_MS) {
+    return;
+  }
+  lastStatusAttempt_ = millis();
+  const auto ok = client_.postStatus(FIRMWARE_VERSION, WiFi.RSSI());
+  Serial.print("Status report: ");
+  Serial.println(ok ? "ok" : "failed");
+}
+
+void HimsScanApp::logState(const char* reason) const {
+  Serial.print("State update [");
+  Serial.print(reason);
+  Serial.print("]: ");
+  Serial.println(state_ == State::Idle ? "idle" : "awaiting quantity");
+}
+
+void HimsScanApp::setAwaitingQuantity() {
+  state_ = State::AwaitQuantity;
+}
+
+void HimsScanApp::resetPending() {
+  scannedCode_.clear();
+  quantity_.clear();
+  state_ = State::Idle;
+}
+
+}  // namespace hims_scan

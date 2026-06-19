@@ -2,6 +2,19 @@
 
 #include <Arduino.h>
 
+enum class HimsKeyEventType {
+  None,
+  Digit,
+  Add,
+  Subtract,
+  Cancel,
+  Other,
+};
+
+struct HimsKeyEvent {
+  HimsKeyEventType type = HimsKeyEventType::None;
+  char value = 0;
+};
+
 void keypadInit();
-void keypadUpdate();
-char keypadLastKey();
+bool keypadPoll(HimsKeyEvent& event);
