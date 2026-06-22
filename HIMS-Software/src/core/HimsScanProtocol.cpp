@@ -2,6 +2,7 @@
 // HIMS Scan R1 protocol types, validation, persistence, and stock mutation rules.
 
 #include "core/HimsScanProtocol.h"
+#include "core/InventoryInternals.h"
 
 #include <algorithm>
 #include <array>
@@ -108,6 +109,30 @@ string hexToken(const array<unsigned char, 32>& bytes) {
   return result;
 }
 
+bool looksLikeSupportedHimsScanCode(const string& code) {
+  const auto trimmed = trim(code);
+  if (trimmed.empty()) {
+    return false;
+  }
+
+  const auto lowered = toLower(trimmed);
+  if (lowered.rfind("hims:", 0) == 0) {
+    return true;
+  }
+
+  const auto allDigits = [](const string& value) {
+    return !value.empty() &&
+           all_of(value.begin(), value.end(), [](unsigned char ch) { return isdigit(ch) != 0; });
+  };
+
+  if (allDigits(trimmed)) {
+    return true;
+  }
+
+  return trimmed.size() >= 2 && isalpha(static_cast<unsigned char>(trimmed.front())) != 0 &&
+         all_of(trimmed.begin() + 1, trimmed.end(), [](unsigned char ch) { return isdigit(ch) != 0; });
+}
+
 }  // namespace
 
 bool HimsScanConfig::paired() const {
@@ -199,17 +224,25 @@ bool parseStatusReportJson(const string& body, DeviceStatusReport& report, strin
 DeviceQuantityResult applyDeviceQuantity(InventoryStore& store, const DeviceQuantityRequest& request) {
   DeviceQuantityResult result;
   result.requestedDelta = request.delta;
-  if (!isHimsId(trim(request.code))) {
+  const auto code = trim(request.code);
+  if (!looksLikeSupportedHimsScanCode(code)) {
     result.httpStatus = 400;
     result.error = "Only HIMS IDs can change stock";
     return result;
   }
-  auto* item = store.findByCode(request.code);
-  if (item == nullptr || toLower(trim(item->himsId)) != toLower(trim(request.code))) {
+
+  auto& items = store.items();
+  const auto itemIt = find_if(items.begin(), items.end(), [&](const InventoryItem& item) {
+    return matchesHimsScanCode(item.himsId, code);
+  });
+
+  if (itemIt == items.end()) {
     result.httpStatus = 404;
     result.error = "Unknown HIMS ID";
     return result;
   }
+
+  auto* item = &*itemIt;
   const auto oldQuantity = item->quantity;
   const long long candidate = static_cast<long long>(oldQuantity) + request.delta;
   const auto newQuantity = static_cast<int>(clamp<long long>(candidate, 0, numeric_limits<int>::max()));

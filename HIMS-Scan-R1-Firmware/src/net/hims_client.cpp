@@ -62,23 +62,6 @@ bool HimsClient::resolveEndpoint(bool force) {
   }
   lastResolveAttempt_ = millis();
 
-  if (config_.fallbackPort != 0U && config_.fallbackHost.length() > 0) {
-    IPAddress ip;
-    if (WiFi.hostByName(config_.fallbackHost.c_str(), ip)) {
-      endpointIp_ = ip;
-      endpointPort_ = config_.fallbackPort;
-      endpointName_ = config_.fallbackHost.c_str();
-      endpointValid_ = true;
-      Serial.print("HIMS endpoint: fallback ");
-      Serial.print(endpointIp_);
-      Serial.print(':');
-      Serial.println(endpointPort_);
-      return true;
-    }
-    Serial.print("HIMS endpoint: could not resolve fallback host ");
-    Serial.println(config_.fallbackHost.c_str());
-  }
-
   if (!mdnsStarted_) {
     mdnsStarted_ = MDNS.begin(config_.deviceId.c_str());
     if (!mdnsStarted_) {
@@ -99,6 +82,23 @@ bool HimsClient::resolveEndpoint(bool force) {
       Serial.println(endpointPort_);
     }
     return endpointValid_;
+  }
+
+  if (config_.fallbackPort != 0U && config_.fallbackHost.length() > 0) {
+    IPAddress ip;
+    if (WiFi.hostByName(config_.fallbackHost.c_str(), ip)) {
+      endpointIp_ = ip;
+      endpointPort_ = config_.fallbackPort;
+      endpointName_ = config_.fallbackHost.c_str();
+      endpointValid_ = true;
+      Serial.print("HIMS endpoint: fallback ");
+      Serial.print(endpointIp_);
+      Serial.print(':');
+      Serial.println(endpointPort_);
+      return true;
+    }
+    Serial.print("HIMS endpoint: could not resolve fallback host ");
+    Serial.println(config_.fallbackHost.c_str());
   }
 
   endpointValid_ = false;

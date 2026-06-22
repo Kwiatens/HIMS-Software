@@ -96,7 +96,7 @@ Do not rely on a HIMS window that the user already has open. Agents may not reli
 
 For verification, always launch a fresh HIMS instance that belongs to the agent:
 
-- Build first, then launch the already-built executable for visual verification. Do not use `run.ps1` for visual QA because it rebuilds and then detaches the app in a way that makes ownership and window capture harder to prove.
+- Rebuild first in the generic build folder, then launch the already-built executable for visual verification. Do not use `run.ps1` for visual QA because it rebuilds and then detaches the app in a way that makes ownership and window capture harder to prove.
 - Launch the app in a real visible desktop terminal window that the user can see and the agent can inspect. Do not use a temporary `USERPROFILE`, hidden process, minimized process, detached process, or background-only launch for visual verification.
 - Use the normal user profile/data for visual verification unless the user explicitly asks for a temporary test profile.
 - Give the verification terminal a unique title such as `HIMS-Agent-Verify-<timestamp>` so the screenshot tool can identify the correct window without touching an unrelated terminal.

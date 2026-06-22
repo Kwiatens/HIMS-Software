@@ -25,6 +25,7 @@ class HimsScanApp {
   void submitCurrent(char action);
   bool flushQueue();
   void reconnectWiFi();
+  void primeHimsSoftwareConnection();
   void maybeSendStatus();
   void logState(const char* reason) const;
   void setAwaitingQuantity();
@@ -38,6 +39,8 @@ class HimsScanApp {
   String scannedCode_;
   State state_ = State::Idle;
   bool wifiStarted_ = false;
+  bool wifiConnectedReported_ = false;
+  bool himsSoftwarePrimed_ = false;
   unsigned long lastReconnectAttempt_ = 0;
   unsigned long lastFlushAttempt_ = 0;
   unsigned long lastStatusAttempt_ = 0;

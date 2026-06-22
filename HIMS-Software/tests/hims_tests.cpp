@@ -267,6 +267,8 @@ int main() {
     assert(plan.parameterLine2.find("Pwr") != string::npos);
     assert(plan.parameterLine3.empty());
     assert(plan.himsId == "HIMS:R-00123");
+    assert(plan.scannerHint == "R-0123");
+    assert(plan.barcodeHint == "R123");
     const auto zpl = service.buildZpl(item);
     assert(!zpl.empty());
     assert(zpl.find("10kOhms") == string::npos);
@@ -275,13 +277,16 @@ int main() {
     assert(zpl.find("^FDResistor^FS") != string::npos);
     assert(zpl.find("^FDPwr 0.125W^FS") != string::npos);
     assert(zpl.find("^FO10,100^A0N,16,16^FDYageo^FS") != string::npos);
+    assert(zpl.find("^FO220,9^BCR,58,N,N,N,N^FDR123^FS") != string::npos);
+    assert(zpl.find("^FO200,55^A0R,13,13^FDR-0123^FS") != string::npos);
+    assert(zpl.find("^BX") == string::npos);
 
     string error;
     assert(service.printItemLabel(item, &error));
     assert(error.empty());
     assert(backendPtr->lastPrinterName_ == "ZDesigner LP 2824 Plus (ZPL)");
     assert(backendPtr->lastJobName_.find("HIMS Label") == 0);
-    assert(backendPtr->lastZpl_.find("^FDHIMS:R-00123^FS") != string::npos);
+    assert(backendPtr->lastZpl_.find("^FDR123^FS") != string::npos);
 
     InventoryItem tvsDiode;
     tvsDiode.id = "tvs-1";
@@ -513,9 +518,13 @@ int main() {
     assert(clamped.requestedDelta == -12);
     assert(clamped.appliedDelta == -5);
     assert(clamped.quantity == 0);
-    request = {"r1-a", "req-4", "HIMS:R-99999", 2};
+    request = {"r1-a", "req-4", "R123", 2};
+    assert(applyDeviceQuantity(store, request).httpStatus == 200);
+    request = {"r1-a", "req-5", "0123", 2};
+    assert(applyDeviceQuantity(store, request).httpStatus == 200);
+    request = {"r1-a", "req-6", "HIMS:R-99999", 2};
     assert(applyDeviceQuantity(store, request).httpStatus == 404);
-    request = {"r1-a", "req-5", "308-1571-1-ND", 2};
+    request = {"r1-a", "req-7", "308-1571-1-ND", 2};
     assert(applyDeviceQuantity(store, request).httpStatus == 400);
   }
 

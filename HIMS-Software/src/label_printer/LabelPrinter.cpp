@@ -6,6 +6,7 @@
 
 #include "label_printer/LabelPrinter.h"
 
+#include "core/InventoryInternals.h"
 #include "ui/shared/AppUiShared.h"
 
 #include <algorithm>
@@ -302,15 +303,6 @@ string dateOnly(time_t value) {
     return ts.substr(0, 10);
   }
   return ts;
-}
-
-string shortHimsHint(const string& himsId) {
-  const auto trimmed = trim(himsId);
-  const auto colon = trimmed.find(':');
-  if (colon != string::npos && colon + 1 < trimmed.size()) {
-    return trimmed.substr(colon + 1);
-  }
-  return trimmed;
 }
 
 string compactJoin(const vector<string>& parts, const string& separator) {
@@ -1366,9 +1358,13 @@ HimsLabelPlan LabelPrinterService::buildLabelPlan(const InventoryItem& item) con
     plan.parameterLine3 = parameterLines[2];
   }
   plan.himsId = trim(item.himsId);
-  plan.scannerHint = shortHimsHint(plan.himsId);
+  plan.scannerHint = compactHimsDisplayCode(plan.himsId);
   if (trim(plan.scannerHint).empty()) {
     plan.scannerHint = shortCode(plan.himsId, 16);
+  }
+  plan.barcodeHint = compactHimsBarcodeCode(plan.scannerHint);
+  if (trim(plan.barcodeHint).empty()) {
+    plan.barcodeHint = plan.scannerHint;
   }
 
   return plan;
@@ -1384,6 +1380,14 @@ string LabelPrinterService::buildZpl(const InventoryItem& item) const {
   const auto parameterLine2 = fitSingleLineLabel(plan.parameterLine2, 24);
   const auto parameterLine3 = fitSingleLineLabel(plan.parameterLine3, 24);
   const auto scannerHint = fitSingleLineLabel(plan.scannerHint, 14);
+  const auto barcodeHint = fitSingleLineLabel(plan.barcodeHint, 14);
+  constexpr int kBarcodeModuleWidth = 2;
+  constexpr int kBarcodeHeight = 16;
+  constexpr int kBarcodeLeft = 254;
+  constexpr int kBarcodeTop = 10;
+  constexpr int kBarcodeTextLeft = 176;
+  constexpr int kBarcodeTextTop = 184;
+  constexpr int kBarcodeTextWidth = 58;
   ostringstream out;
   out << "^XA\r\n";
   out << "^CI28\r\n";
@@ -1393,22 +1397,26 @@ string LabelPrinterService::buildZpl(const InventoryItem& item) const {
   out << "^PR3\r\n";
   out << "^MD12\r\n";
   out << "\r\n";
+
   out << "^FX --- Header ---\r\n";
   out << "^FO5,0^GB180,24,24,B,6^FS\r\n";
   out << "^FO12,6^A0N,17,17^FR^FD" << sanitizeLabelText(categoryHeader) << "^FS\r\n";
-  out << "^FO200,6^A0N,17,17^FR^FDHIMS^FS\r\n";
   out << "\r\n";
+
   out << "^FX --- Main value ---\r\n";
   out << "^FO10,33^A0N,34,31^FD" << sanitizeLabelText(mainValue) << "^FS\r\n";
   out << "\r\n";
+
   out << "^FX --- Package ---\r\n";
   if (!packageLine.empty()) {
     out << "^FO10,70^A0N,14,14^FD" << sanitizeLabelText(packageLine) << "^FS\r\n";
   }
   out << "\r\n";
+
   out << "^FX --- Thin divider ---\r\n";
   out << "^FO10,93^GB146,1,1^FS\r\n";
   out << "\r\n";
+
   out << "^FX --- Manufacturer / parameters ---\r\n";
   if (!manufacturerLine.empty()) {
     out << "^FO10,100^A0N,16,16^FD" << sanitizeLabelText(manufacturerLine) << "^FS\r\n";
@@ -1423,11 +1431,15 @@ string LabelPrinterService::buildZpl(const InventoryItem& item) const {
     out << "^FO10,154^A0N,15,15^FD" << sanitizeLabelText(parameterLine3) << "^FS\r\n";
   }
   out << "\r\n";
-  out << "^FX --- DataMatrix ---\r\n";
-  out << "^FO160,60^BXN,5,200,0,0^FD" << sanitizeLabelText(plan.himsId) << "^FS\r\n";
+
+  out << "^FX --- Vertical Code 128 barcode ---\r\n";
+  out << "^BY2,2,58\r\n";
+  out << "^FO220,9^BCR,58,N,N,N,N^FD" << sanitizeLabelText(barcodeHint) << "^FS\r\n";
   out << "\r\n";
-  out << "^FX --- Scanner hint ---\r\n";
-  out << "^FO173,145^A0N,15,14^FD" << sanitizeLabelText(scannerHint) << "^FS\r\n";
+
+  out << "^FX --- Human readable HIMS ID ---\r\n";
+  out << "^FO200,55^A0R,13,13^FD" << sanitizeLabelText(scannerHint) << "^FS\r\n";
+
   out << "^XZ\r\n";
   return out.str();
 }

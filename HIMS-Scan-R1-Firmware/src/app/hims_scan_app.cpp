@@ -26,8 +26,12 @@ bool HimsScanApp::begin() {
 
   if (!WIFI_AUTOSTART) {
     Serial.println("Wi-Fi auto-start disabled; running offline for keypad/scanner testing.");
+  } else if (trimCopy(WIFI_SSID).length() == 0) {
+    Serial.println("Wi-Fi credentials are empty; staying offline.");
   } else {
-    Serial.println("Wi-Fi will connect from the main loop.");
+    Serial.print("Connecting to local Wi-Fi SSID: ");
+    Serial.println(WIFI_SSID);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 
   logState("boot");
@@ -38,6 +42,7 @@ void HimsScanApp::loop() {
   // Drain UART before any Wi-Fi operation that may briefly block.
   pollScanner();
   reconnectWiFi();
+  primeHimsSoftwareConnection();
 
   HimsKeyEvent event;
   while (keypadPoll(event)) {
@@ -122,7 +127,6 @@ void HimsScanApp::submitCurrent(char action) {
   Serial.print("Queued request: ");
   Serial.println(buildQuantityRequestJson(request.deviceId, request.requestId, request.code, request.delta).c_str());
   resetPending();
-  flushQueue();
 }
 
 bool HimsScanApp::flushQueue() {
@@ -173,8 +177,21 @@ void HimsScanApp::reconnectWiFi() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiConnectedReported_) {
+      wifiConnectedReported_ = true;
+      himsSoftwarePrimed_ = false;
+      lastStatusAttempt_ = 0;
+      lastFlushAttempt_ = 0;
+      Serial.print("Local Wi-Fi connected: ");
+      Serial.print(WiFi.SSID());
+      Serial.print(" @ ");
+      Serial.println(WiFi.localIP());
+    }
     return;
   }
+
+  wifiConnectedReported_ = false;
+  himsSoftwarePrimed_ = false;
 
   if (millis() - lastReconnectAttempt_ < WIFI_RECONNECT_INTERVAL_MS) {
     return;
@@ -186,9 +203,22 @@ void HimsScanApp::reconnectWiFi() {
     return;
   }
 
-  Serial.print("Connecting to Wi-Fi SSID: ");
+  Serial.print("Reconnecting to local Wi-Fi SSID: ");
   Serial.println(WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+
+void HimsScanApp::primeHimsSoftwareConnection() {
+  if (!wifiConnectedReported_ || himsSoftwarePrimed_) {
+    return;
+  }
+
+  himsSoftwarePrimed_ = true;
+  Serial.println("Local Wi-Fi ready; discovering HIMS software endpoint...");
+  if (client_.resolveEndpoint(true)) {
+    Serial.print("HIMS software endpoint: ");
+    Serial.println(client_.endpointSummary().c_str());
+  }
 }
 
 void HimsScanApp::maybeSendStatus() {

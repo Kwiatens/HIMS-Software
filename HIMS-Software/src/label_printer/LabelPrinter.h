@@ -44,6 +44,7 @@ struct HimsLabelPlan {
   string parameterLine3;
   string himsId;
   string scannerHint;
+  string barcodeHint;
 };
 
 class PrinterBackend {

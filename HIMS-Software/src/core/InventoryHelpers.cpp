@@ -132,6 +132,29 @@ bool parseHimsIdValue(const string& value, string& prefix, size_t& sequence) {
   return true;
 }
 
+string compactHimsDisplayCodeImpl(const string& himsId) {
+  auto compact = trim(himsId);
+  const auto colon = compact.find(':');
+  if (colon != string::npos && colon + 1 < compact.size()) {
+    compact = compact.substr(colon + 1);
+  }
+
+  const auto dash = compact.find('-');
+  if (dash != string::npos && dash + 1 < compact.size()) {
+    auto prefix = trim(compact.substr(0, dash + 1));
+    auto suffix = trim(compact.substr(dash + 1));
+    if (suffix.size() > 1 && suffix.front() == '0') {
+      suffix.erase(0, 1);
+    }
+    return prefix + suffix;
+  }
+
+  if (compact.size() > 1 && compact.front() == '0') {
+    compact.erase(0, 1);
+  }
+  return compact;
+}
+
 }  // namespace
 
 time_t nowEpoch() {
@@ -243,6 +266,51 @@ bool isHimsId(const string& value) {
   string prefix;
   size_t sequence = 0;
   return parseHimsIdValue(value, prefix, sequence);
+}
+
+string compactHimsDisplayCode(const string& himsId) {
+  return compactHimsDisplayCodeImpl(himsId);
+}
+
+string compactHimsBarcodeCode(const string& himsId) {
+  auto code = compactHimsDisplayCodeImpl(himsId);
+  code.erase(remove(code.begin(), code.end(), '-'), code.end());
+  if (code.size() > 1 && code[1] == '0') {
+    code.erase(1, 1);
+  }
+  return code;
+}
+
+bool matchesHimsScanCode(const string& himsId, const string& code) {
+  const auto needle = toLower(trim(code));
+  if (needle.empty()) {
+    return false;
+  }
+
+  const auto full = toLower(trim(himsId));
+  if (!full.empty() && full == needle) {
+    return true;
+  }
+
+  const auto display = toLower(compactHimsDisplayCode(himsId));
+  if (!display.empty() && display == needle) {
+    return true;
+  }
+
+  const auto barcode = toLower(compactHimsBarcodeCode(himsId));
+  if (!barcode.empty() && barcode == needle) {
+    return true;
+  }
+
+  const auto dash = display.find('-');
+  if (dash != string::npos && dash + 1 < display.size()) {
+    const auto legacy = toLower(display.substr(dash + 1));
+    if (legacy == needle) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 void ensureInventoryIdentifiers(vector<InventoryItem>& items) {
