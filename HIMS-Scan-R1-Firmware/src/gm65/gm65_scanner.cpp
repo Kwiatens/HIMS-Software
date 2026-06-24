@@ -1,3 +1,5 @@
+// HIMS Scan R1 GM65 scanner driver.
+
 #include "gm65/gm65_scanner.h"
 
 #include "config/config.h"
@@ -8,6 +10,8 @@
 namespace hims_scan {
 
 namespace {
+
+constexpr size_t kMaxScanLength = 1024U;
 
 struct ZoneWrite {
   uint16_t address;
@@ -41,12 +45,18 @@ constexpr ZoneWrite kBootProfile[] = {
     {0x0060, 0x20},  // Raw serial output with CRLF terminator
 };
 
+bool isPayloadCharacter(char ch) {
+  const auto byte = static_cast<unsigned char>(ch);
+  return std::isprint(byte) != 0 || byte == 0x1DU || byte == 0x1EU || byte == 0x04U;
+}
+
 }  // namespace
 
 bool Gm65Scanner::begin(uint32_t baudRate) {
   baudRate_ = baudRate;
   buffer_.clear();
   lastByteAt_ = 0;
+  discardingOversized_ = false;
   serial_.setRxBufferSize(1024);
   serial_.begin(baudRate_, SERIAL_8N1, GM65_RX_PIN, GM65_TX_PIN);
   serial_.setTimeout(5);
@@ -62,6 +72,7 @@ void Gm65Scanner::end() {
   active_ = false;
   buffer_.clear();
   lastByteAt_ = 0;
+  discardingOversized_ = false;
 }
 
 bool Gm65Scanner::suspend() {
@@ -92,6 +103,7 @@ void Gm65Scanner::flushInput() {
   }
   buffer_.clear();
   lastByteAt_ = 0;
+  discardingOversized_ = false;
 }
 
 bool Gm65Scanner::active() const {
@@ -164,6 +176,12 @@ bool Gm65Scanner::poll(String& code) {
     }
     const char ch = static_cast<char>(raw);
     if (ch == '\r' || ch == '\n') {
+      if (discardingOversized_) {
+        discardingOversized_ = false;
+        buffer_.clear();
+        lastByteAt_ = 0;
+        continue;
+      }
       if (buffer_.length() > 0) {
         code = buffer_;
         buffer_.clear();
@@ -172,13 +190,18 @@ bool Gm65Scanner::poll(String& code) {
       }
       continue;
     }
-    if (std::isprint(static_cast<unsigned char>(ch)) != 0) {
+    if (discardingOversized_) {
+      lastByteAt_ = millis();
+      continue;
+    }
+    if (isPayloadCharacter(ch)) {
       buffer_ += ch;
       lastByteAt_ = millis();
     }
-    if (buffer_.length() > 160U) {
+    if (buffer_.length() > kMaxScanLength) {
       buffer_.clear();
-      lastByteAt_ = 0;
+      lastByteAt_ = millis();
+      discardingOversized_ = true;
     }
   }
 
@@ -190,6 +213,10 @@ bool Gm65Scanner::poll(String& code) {
     buffer_.clear();
     lastByteAt_ = 0;
     return true;
+  }
+  if (discardingOversized_ && lastByteAt_ != 0 && millis() - lastByteAt_ >= 30U) {
+    discardingOversized_ = false;
+    lastByteAt_ = 0;
   }
   return false;
 }

@@ -768,6 +768,19 @@ int main() {
   }
 
   {
+    DeviceScanRequest request;
+    string error;
+    assert(parseScanRequestJson(
+        R"({"deviceId":"r1-a","requestId":"req-1","code":"[)>\u001e06\u001dP718-2362-1-ND\u001dQ2\u001e\u0004","quantity":2})",
+        request, error));
+    assert(request.quantity == 2);
+    assert(request.code == string("[)>") + '\x1e' + "06" + '\x1d' + "P718-2362-1-ND" + '\x1d' + "Q2" + '\x1e' + '\x04');
+
+    assert(parseScanRequestJson(R"({"deviceId":"r1-a","requestId":"req-2","code":"ABC123"})", request, error));
+    assert(request.quantity == 1);
+  }
+
+  {
     const auto configPath = filesystem::temp_directory_path() / "hims-scan-config-test.conf";
     const HimsScanConfig expected{"r1-test", string(64, 'a'), "192.168.1.2", 8080};
     assert(saveHimsScanConfig(configPath, expected));

@@ -1,3 +1,5 @@
+// HIMS Scan R1 application controller.
+
 #include "app/hims_scan_app.h"
 
 #include <ArduinoOTA.h>
@@ -5,9 +7,125 @@
 #include "HimsScanCore.h"
 #include "config/config.h"
 
+#include <cctype>
+#include <cstring>
 #include <WiFi.h>
 
 namespace hims_scan {
+
+namespace {
+
+bool isQuantityCode(const String& code) {
+  const auto trimmed = trimCopy(code);
+  if (trimmed.length() == 0) {
+    return false;
+  }
+  for (size_t index = 0; index < trimmed.length(); ++index) {
+    if (!std::isdigit(static_cast<unsigned char>(trimmed[index]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool hasAimPrefix(const String& value, char symbology) {
+  return value.length() >= 2U && value[0] == ']' &&
+         std::tolower(static_cast<unsigned char>(value[1])) == std::tolower(static_cast<unsigned char>(symbology));
+}
+
+bool hasIso15434Macro06Envelope(const String& value) {
+  if (!value.startsWith("[)>")) {
+    return false;
+  }
+
+  if (value.length() >= 6U && static_cast<unsigned char>(value[3]) == 0x1EU && value[4] == '0' && value[5] == '6') {
+    return true;
+  }
+
+  // Some scanner profiles suppress RS/GS control characters. A DigiKey Macro
+  // 06 payload can then arrive as "[)>06P..." rather than "[)><RS>06<GS>P...".
+  return value.length() >= 5U && value[3] == '0' && value[4] == '6';
+}
+
+bool isIso15434Separator(char ch) {
+  const auto byte = static_cast<unsigned char>(ch);
+  return byte == 0x1DU || byte == 0x1EU || byte == 0x04U;
+}
+
+size_t iso15434PayloadOffset(const String& value) {
+  if (value.length() >= 7U && static_cast<unsigned char>(value[3]) == 0x1EU && value[4] == '0' &&
+      value[5] == '6' && static_cast<unsigned char>(value[6]) == 0x1DU) {
+    return 7U;
+  }
+  if (value.length() >= 5U && value[3] == '0' && value[4] == '6') {
+    return 5U;
+  }
+  return 0U;
+}
+
+bool fieldStartsWithDataIdentifier(const String& field, const char* identifier) {
+  const auto idLength = strlen(identifier);
+  return field.length() > idLength && field.substring(0, idLength) == identifier;
+}
+
+String findSeparatedDataIdentifier(const String& value, const char* identifier) {
+  auto index = iso15434PayloadOffset(value);
+  while (index < value.length()) {
+    while (index < value.length() && isIso15434Separator(value[index])) {
+      ++index;
+    }
+    const auto fieldStart = index;
+    while (index < value.length() && !isIso15434Separator(value[index])) {
+      ++index;
+    }
+    const auto field = value.substring(fieldStart, index);
+    if (fieldStartsWithDataIdentifier(field, identifier)) {
+      return field.substring(strlen(identifier));
+    }
+  }
+  return {};
+}
+
+String findSuppressedSeparatorDigikeyPart(const String& value) {
+  const auto offset = iso15434PayloadOffset(value);
+  if (offset >= value.length() || value[offset] != 'P') {
+    return {};
+  }
+
+  const auto partStart = offset + 1U;
+  auto partEnd = value.indexOf("1P", partStart);
+  if (partEnd < 0) {
+    partEnd = value.indexOf("30P", partStart);
+  }
+  if (partEnd < 0) {
+    return {};
+  }
+  return value.substring(partStart, partEnd);
+}
+
+String digikeyLookupCodeFromDataMatrix(const String& value) {
+  auto lookup = findSeparatedDataIdentifier(value, "P");
+  if (lookup.length() == 0) {
+    lookup = findSeparatedDataIdentifier(value, "30P");
+  }
+  if (lookup.length() == 0) {
+    lookup = findSuppressedSeparatorDigikeyPart(value);
+  }
+  if (lookup.length() == 0) {
+    lookup = findSeparatedDataIdentifier(value, "1P");
+  }
+  return trimCopy(lookup);
+}
+
+bool isDataMatrixScan(const String& value) {
+  return hasAimPrefix(value, 'd') || hasIso15434Macro06Envelope(stripAimSymbologyPrefix(value));
+}
+
+bool isQrScan(const String& value) {
+  return hasAimPrefix(value, 'q');
+}
+
+}  // namespace
 
 bool HimsScanApp::begin() {
   Serial.println("HIMS Scan R1 booting");
@@ -17,6 +135,8 @@ bool HimsScanApp::begin() {
   powerMode_ = PowerMode::Normal;
   otaRequested_ = false;
   otaActive_ = false;
+  lastScanFlushAttempt_ = 0;
+  scanSequence_ = 1;
 
   clientConfig_.deviceId = DEVICE_ID;
   clientConfig_.token = DEVICE_TOKEN;
@@ -39,6 +159,7 @@ bool HimsScanApp::begin() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 
+  sendDebugMessage("boot");
   logState("boot");
   return true;
 }
@@ -72,8 +193,9 @@ void HimsScanApp::loop() {
   reconnectWiFi();
   primeHimsSoftwareConnection();
 
+  const bool scanSent = flushScanQueue();
   const bool quantitySent = flushQueue();
-  if (!quantitySent) {
+  if (!scanSent && !quantitySent) {
     maybeSendStatus();
   }
   // Drain anything received while the HTTP client was active.
@@ -90,19 +212,40 @@ void HimsScanApp::pollScanner() {
 
 void HimsScanApp::handleScan(const String& code) {
   // Some GM65 profiles prepend an AIM symbology identifier (for example ]C1
-  // for Code 128, ]Q3 for QR, or ]d2 for Data Matrix). Normalize that away
-  // before handing the code to the rest of the app.
-  const auto trimmed = trimCopy(stripAimSymbologyPrefix(code));
+  // for Code 128, ]Q3 for QR, or ]d2 for Data Matrix). We use that marker to
+  // route Data Matrix scans to DigiKey and QR scans to the HIMS path.
+  const auto raw = trimCopy(code);
+  const auto trimmed = trimCopy(stripAimSymbologyPrefix(raw));
   if (trimmed.length() == 0) {
     return;
   }
 
-  scannedCode_ = trimmed;
-  quantity_.clear();
-  setAwaitingQuantity();
   Serial.print("GM65 scan: ");
-  Serial.println(scannedCode_.c_str());
-  Serial.println("Enter quantity, then press A to add or B to subtract. C cancels.");
+  Serial.println(trimmed.c_str());
+
+  if (isDataMatrixScan(raw)) {
+    const auto lookupCode = digikeyLookupCodeFromDataMatrix(trimmed);
+    const auto forwardedCode = lookupCode.length() > 0 ? lookupCode : trimmed;
+    resetPending();
+    queueScan(forwardedCode);
+    Serial.println("Queued DigiKey Data Matrix scan for HIMS software.");
+    sendDebugMessage(String("data matrix scan queued ") + forwardedCode, "scan");
+    return;
+  }
+
+  if (isQrScan(raw) || isQuantityCode(trimmed)) {
+    scannedCode_ = trimmed;
+    quantity_.clear();
+    setAwaitingQuantity();
+    Serial.println("Enter quantity, then press A to add or B to subtract. C cancels.");
+    sendDebugMessage(String("qr quantity scan ") + trimmed, "scan");
+    return;
+  }
+
+  resetPending();
+  queueScan(trimmed);
+  Serial.println("Queued DigiKey/Data Matrix scan for HIMS software.");
+  sendDebugMessage(String("scan queued ") + trimmed, "scan");
 }
 
 void HimsScanApp::handleKey(const HimsKeyEvent& event) {
@@ -161,6 +304,7 @@ void HimsScanApp::requestOtaUpdate() {
     Serial.println("Waking standby path for OTA update.");
   }
   Serial.println("OTA update requested. Normal scanning is paused until the update finishes.");
+  sendDebugMessage("ota requested", "warn");
 }
 
 bool HimsScanApp::serviceOta() {
@@ -273,7 +417,41 @@ bool HimsScanApp::startOtaService() {
   Serial.print(clientConfig_.deviceId.c_str());
   Serial.print(" at ");
   Serial.println(WiFi.localIP());
+  sendDebugMessage(String("ota ready at ") + WiFi.localIP().toString(), "warn");
   return true;
+}
+
+void HimsScanApp::sendDebugMessage(const String& message, const String& level) {
+  if (!WiFi.isConnected() || trimCopy(message).length() == 0) {
+    return;
+  }
+  client_.postDebug(message, level);
+}
+
+String HimsScanApp::buildWifiDebugText() const {
+  String out;
+  if (powerMode_ == PowerMode::Standby) {
+    out = "standby";
+  } else if (!WIFI_AUTOSTART) {
+    out = "wifi autostart disabled";
+  } else if (trimCopy(WIFI_SSID).length() == 0) {
+    out = "wifi credentials empty";
+  } else if (WiFi.status() == WL_CONNECTED) {
+    out = "wifi connected ssid=";
+    out += WiFi.SSID();
+    out += " ip=";
+    out += WiFi.localIP().toString();
+  } else {
+    out = "wifi disconnected target=";
+    out += WIFI_SSID;
+  }
+
+  out += " endpoint=";
+  out += client_.endpointSummary();
+  if (otaRequested_) {
+    out += " ota=pending";
+  }
+  return out;
 }
 
 void HimsScanApp::enterStandby() {
@@ -297,6 +475,7 @@ void HimsScanApp::enterStandby() {
   scanner_.suspend();
   powerMode_ = PowerMode::Standby;
   Serial.println("Standby mode active. Hold D again to wake.");
+  sendDebugMessage("standby entered", "warn");
 }
 
 void HimsScanApp::exitStandby() {
@@ -322,6 +501,7 @@ void HimsScanApp::exitStandby() {
   } else {
     Serial.println("Standby exit complete; Wi-Fi remains offline.");
   }
+  sendDebugMessage("standby exited", "warn");
 }
 
 void HimsScanApp::submitCurrent(char action) {
@@ -342,6 +522,64 @@ void HimsScanApp::submitCurrent(char action) {
   Serial.print("Queued request: ");
   Serial.println(buildQuantityRequestJson(request.deviceId, request.requestId, request.code, request.delta).c_str());
   resetPending();
+}
+
+void HimsScanApp::queueScan(const String& code, int quantity) {
+  ScanRequest request;
+  request.deviceId = clientConfig_.deviceId;
+  request.sequence = scanSequence_++;
+  request.requestId = makeRequestId(clientConfig_.deviceId, request.sequence);
+  request.code = code;
+  request.quantity = quantity;
+  if (!scanQueue_.push(request)) {
+    Serial.println("Failed to queue scan request.");
+    return;
+  }
+
+  Serial.print("Queued scan request: ");
+  Serial.println(buildScanRequestJson(request.deviceId, request.requestId, request.code).c_str());
+}
+
+bool HimsScanApp::flushScanQueue() {
+  if (scanQueue_.empty()) {
+    return false;
+  }
+  if (millis() - lastScanFlushAttempt_ < FLUSH_INTERVAL_MS) {
+    return false;
+  }
+  lastScanFlushAttempt_ = millis();
+
+  if (!WiFi.isConnected()) {
+    return false;
+  }
+
+  if (!client_.resolveEndpoint()) {
+    return false;
+  }
+
+  const auto* front = scanQueue_.front();
+  if (front == nullptr) {
+    return false;
+  }
+
+  int status = 0;
+  String body;
+  const auto ok = client_.postScan(*front, status, body);
+  Serial.print("POST /api/device/scan -> ");
+  Serial.println(ok ? "sent" : "failed");
+  if (!ok || status < 200 || status >= 300) {
+    Serial.print("Response body: ");
+    Serial.println(body.c_str());
+    sendDebugMessage(String("scan failed ") + front->code + " status " + String(status), "error");
+    return false;
+  }
+
+  ScanRequest sentRequest;
+  scanQueue_.pop(sentRequest);
+  Serial.print("Forwarded scan code for ");
+  Serial.println(sentRequest.code.c_str());
+  sendDebugMessage(String("scan sent ") + sentRequest.code + " status " + String(status), "scan");
+  return true;
 }
 
 bool HimsScanApp::flushQueue() {
@@ -405,13 +643,13 @@ void HimsScanApp::reconnectWiFi() {
       Serial.print(WiFi.SSID());
       Serial.print(" @ ");
       Serial.println(WiFi.localIP());
+      sendDebugMessage(buildWifiDebugText(), "status");
     }
     return;
   }
 
   wifiConnectedReported_ = false;
   himsSoftwarePrimed_ = false;
-
   if (millis() - lastReconnectAttempt_ < WIFI_RECONNECT_INTERVAL_MS) {
     return;
   }
@@ -453,9 +691,12 @@ void HimsScanApp::maybeSendStatus() {
     return;
   }
   lastStatusAttempt_ = millis();
-  const auto ok = client_.postStatus(FIRMWARE_VERSION, WiFi.RSSI());
+  const auto ok = client_.postStatus(FIRMWARE_VERSION, WiFi.RSSI(), buildWifiDebugText());
   Serial.print("Status report: ");
   Serial.println(ok ? "ok" : "failed");
+  if (ok) {
+    sendDebugMessage(buildWifiDebugText(), "status");
+  }
 }
 
 void HimsScanApp::logState(const char* reason) const {

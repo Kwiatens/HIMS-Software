@@ -1458,11 +1458,11 @@ string LabelPrinterService::buildZpl(const InventoryItem& item, string rackLocat
   out << "\r\n";
 
   out << "^FX --- Human readable HIMS ID ---\r\n";
-  out << "^FO162,155^A0N,13,13^FD" << sanitizeLabelText(scannerHint) << "^FS\r\n";
+  out << "^FO162,165^A0N,13,13^FD" << sanitizeLabelText(scannerHint) << "^FS\r\n";
 
   if (!rackHint.empty()) {
     out << "^FX --- HIMS rack location ---\r\n";
-    out << "^FO10,176^A0N,18,18^FD" << sanitizeLabelText(rackHint) << "^FS\r\n";
+    out << "^FO10,173^A0N,18,18^FD" << sanitizeLabelText(rackHint) << "^FS\r\n";
   }
 
   out << "^XZ\r\n";

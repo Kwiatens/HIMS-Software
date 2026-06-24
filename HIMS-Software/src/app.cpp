@@ -100,9 +100,10 @@ App::App()
   server_.setDeviceCredentials(himsScanConfig_.deviceId, himsScanConfig_.token);
 
   if (!server_.start(8080, filesystem::current_path() / "scanner.html",
-                     [this](const string& code) { pushScanCode(code); },
+                     [this](const DeviceScanRequest& request) { pushScanCode(request); },
                      [this](const DeviceQuantityRequest& request) { return enqueueDeviceQuantity(request); },
-                     [this](const DeviceStatusReport& report) { enqueueDeviceStatus(report); })) {
+                     [this](const DeviceStatusReport& report) { enqueueDeviceStatus(report); },
+                     [this](const DeviceDebugReport& report) { enqueueDeviceDebug(report); })) {
     setMessage("Scanner server failed to start; terminal still works", 5);
   } else {
     mdnsService_.start(server_.port());

@@ -110,6 +110,23 @@ bool HimsClient::resolveEndpoint(bool force) {
   return false;
 }
 
+bool HimsClient::postDebug(const String& message, const String& level) {
+  int httpStatus = 0;
+  String responseBody;
+  const auto payload = buildDebugRequestJson(config_.deviceId, makeRequestId(config_.deviceId, millis()),
+                                             level, message);
+  const auto sent = sendJson("/api/device/debug", payload, httpStatus, responseBody);
+  if (sent && httpStatus != 200) {
+    Serial.print("POST /api/device/debug -> HTTP ");
+    Serial.println(httpStatus);
+    if (responseBody.length() > 0) {
+      Serial.print("Response body: ");
+      Serial.println(responseBody.c_str());
+    }
+  }
+  return sent && httpStatus == 200;
+}
+
 bool HimsClient::connectToResolved() {
   if (!resolveEndpoint()) {
     return false;
@@ -190,10 +207,15 @@ bool HimsClient::postQuantity(const QuantityRequest& request, int& httpStatus, S
   return sendJson("/api/device/quantity", payload, httpStatus, responseBody);
 }
 
-bool HimsClient::postStatus(const String& firmwareVersion, int rssi) {
+bool HimsClient::postScan(const ScanRequest& request, int& httpStatus, String& responseBody) {
+  const auto payload = buildScanRequestJson(request.deviceId, request.requestId, request.code, request.quantity);
+  return sendJson("/api/device/scan", payload, httpStatus, responseBody);
+}
+
+bool HimsClient::postStatus(const String& firmwareVersion, int rssi, const String& debug) {
   int httpStatus = 0;
   String responseBody;
-  const auto payload = buildStatusRequestJson(config_.deviceId, firmwareVersion, rssi);
+  const auto payload = buildStatusRequestJson(config_.deviceId, firmwareVersion, rssi, debug);
   const auto sent = sendJson("/api/device/status", payload, httpStatus, responseBody);
   if (sent && httpStatus != 200) {
     Serial.print("POST /api/device/status -> HTTP ");

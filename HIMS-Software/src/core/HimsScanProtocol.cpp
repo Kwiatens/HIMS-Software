@@ -31,6 +31,13 @@ using namespace std;
 
 namespace {
 
+int hexDigit(char ch) {
+  if (ch >= '0' && ch <= '9') return ch - '0';
+  if (ch >= 'a' && ch <= 'f') return 10 + (ch - 'a');
+  if (ch >= 'A' && ch <= 'F') return 10 + (ch - 'A');
+  return -1;
+}
+
 string jsonEscape(const string& value) {
   ostringstream out;
   for (const char ch : value) {
@@ -63,6 +70,24 @@ optional<string> jsonString(const string& body, const string& key) {
         case 'n': value.push_back('\n'); break;
         case 'r': value.push_back('\r'); break;
         case 't': value.push_back('\t'); break;
+        case 'u':
+          if (position + 4 < body.size()) {
+            const auto hi = hexDigit(body[position + 1]);
+            const auto h2 = hexDigit(body[position + 2]);
+            const auto h3 = hexDigit(body[position + 3]);
+            const auto lo = hexDigit(body[position + 4]);
+            if (hi >= 0 && h2 >= 0 && h3 >= 0 && lo >= 0) {
+              const auto codepoint = static_cast<unsigned>(hi << 12 | h2 << 8 | h3 << 4 | lo);
+              if (codepoint <= 0xFFU) {
+                value.push_back(static_cast<char>(codepoint));
+                position += 4;
+                escaped = false;
+                continue;
+              }
+            }
+          }
+          value.push_back(ch);
+          break;
         default: value.push_back(ch); break;
       }
       escaped = false;
@@ -191,15 +216,56 @@ bool parseQuantityRequestJson(const string& body, DeviceQuantityRequest& request
   return true;
 }
 
+bool parseScanRequestJson(const string& body, DeviceScanRequest& request, string& error) {
+  const auto deviceId = jsonString(body, "deviceId");
+  const auto requestId = jsonString(body, "requestId");
+  const auto code = jsonString(body, "code");
+  const auto quantity = jsonInt(body, "quantity");
+  if (!deviceId || trim(*deviceId).empty() || !requestId || trim(*requestId).empty() || !code ||
+      trim(*code).empty()) {
+    error = "Missing or invalid deviceId, requestId, or code";
+    return false;
+  }
+  if (requestId->size() > 96 || deviceId->size() > 96 || code->size() > 128) {
+    error = "Request field is too long";
+    return false;
+  }
+  if (quantity && *quantity <= 0) {
+    error = "Quantity must be positive";
+    return false;
+  }
+  request = {*deviceId, *requestId, *code, quantity ? *quantity : 1};
+  return true;
+}
+
+bool parseDebugReportJson(const string& body, DeviceDebugReport& report, string& error) {
+  const auto deviceId = jsonString(body, "deviceId");
+  const auto requestId = jsonString(body, "requestId");
+  const auto level = jsonString(body, "level");
+  const auto message = jsonString(body, "message");
+  if (!deviceId || trim(*deviceId).empty() || !requestId || trim(*requestId).empty() || !message ||
+      trim(*message).empty()) {
+    error = "Missing or invalid deviceId, requestId, or message";
+    return false;
+  }
+  if (requestId->size() > 96 || deviceId->size() > 96 || message->size() > 512 || (level && level->size() > 24)) {
+    error = "Debug field is too long";
+    return false;
+  }
+  report = {*deviceId, *requestId, level ? *level : string("info"), *message};
+  return true;
+}
+
 bool parseStatusReportJson(const string& body, DeviceStatusReport& report, string& error) {
   const auto deviceId = jsonString(body, "deviceId");
   const auto version = jsonString(body, "firmwareVersion");
   const auto rssi = jsonInt(body, "rssi");
+  const auto debug = jsonString(body, "debug");
   if (!deviceId || trim(*deviceId).empty() || !version || !rssi) {
     error = "Missing or invalid deviceId, firmwareVersion, or rssi";
     return false;
   }
-  report = {*deviceId, *version, *rssi};
+  report = {*deviceId, *version, *rssi, debug ? *debug : string{}};
   return true;
 }
 
@@ -256,6 +322,10 @@ DeviceQuantityResult applyDeviceQuantityCached(InventoryStore& store, const Devi
   return result;
 }
 
+string scanResultJson(bool ok, const string& error) {
+  return ok ? string("{\"ok\":true}") : string("{\"ok\":false,\"error\":\"") + jsonEscape(error) + "\"}";
+}
+
 string quantityResultJson(const DeviceQuantityResult& result) {
   ostringstream out;
   out << "{\"ok\":" << (result.ok ? "true" : "false");
@@ -269,6 +339,10 @@ string quantityResultJson(const DeviceQuantityResult& result) {
   }
   out << '}';
   return out.str();
+}
+
+string debugResultJson(bool ok, const string& error) {
+  return ok ? string("{\"ok\":true}") : string("{\"ok\":false,\"error\":\"") + jsonEscape(error) + "\"}";
 }
 
 string statusResultJson(bool ok, const string& error) {

@@ -139,7 +139,7 @@ LocalHttpServer::~LocalHttpServer() {
 }
 
 bool LocalHttpServer::start(uint16_t preferredPort, filesystem::path scannerPagePath, ScanCallback onScan,
-                            QuantityCallback onQuantity, StatusCallback onStatus) {
+                            QuantityCallback onQuantity, StatusCallback onStatus, DebugCallback onDebug) {
   stop();
 
   WSADATA data{};
@@ -158,6 +158,7 @@ bool LocalHttpServer::start(uint16_t preferredPort, filesystem::path scannerPage
   }
 
   onScan_ = move(onScan);
+  onDebug_ = move(onDebug);
   onQuantity_ = move(onQuantity);
   onStatus_ = move(onStatus);
 
@@ -401,16 +402,102 @@ bool LocalHttpServer::serveConnection(SOCKET clientSocket, string requestText) {
   }
 
   if (method == "POST" && target == "/api/scan") {
-    const auto code = extractScanCode(body);
+    DeviceScanRequest request;
+    request.code = extractScanCode(body);
     {
       lock_guard<mutex> lock(stateMutex_);
-      lastScan_ = code;
+      lastScan_ = request.code;
     }
     if (onScan_) {
-      onScan_(code);
+      onScan_(request);
     }
-    const auto response = responseText("200 OK", "application/json; charset=utf-8", scanCallbackMessage(code));
+    const auto response = responseText("200 OK", "application/json; charset=utf-8",
+                                       scanCallbackMessage(request.code));
     send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+    return true;
+  }
+
+  if (method == "POST" && target == "/api/device/scan") {
+    string expectedDevice;
+    string expectedToken;
+    {
+      lock_guard<mutex> lock(stateMutex_);
+      expectedDevice = pairedDeviceId_;
+      expectedToken = deviceToken_;
+    }
+    const auto suppliedToken = headerValue(headers, "X-HIMS-Token");
+    if (expectedToken.empty() || suppliedToken != expectedToken) {
+      const auto response = responseText("401 Unauthorized", "application/json; charset=utf-8",
+                                         scanResultJson(false, "Unauthorized device"));
+      send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+      return false;
+    }
+
+    DeviceScanRequest request;
+    string error;
+    if (!parseScanRequestJson(body, request, error) || (!expectedDevice.empty() && request.deviceId != expectedDevice)) {
+      if (error.empty()) error = "Device identity does not match the pairing";
+      const auto response = responseText("400 Bad Request", "application/json; charset=utf-8",
+                                         scanResultJson(false, error));
+      send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+      return false;
+    }
+
+    bool seen = false;
+    {
+      lock_guard<mutex> lock(stateMutex_);
+      seen = deviceScanRequestCache_.find(request.requestId) != deviceScanRequestCache_.end();
+      if (!seen) {
+        deviceScanRequestCache_.insert(request.requestId);
+        deviceScanRequestOrder_.push_back(request.requestId);
+        while (deviceScanRequestOrder_.size() > 64U) {
+          deviceScanRequestCache_.erase(deviceScanRequestOrder_.front());
+          deviceScanRequestOrder_.pop_front();
+        }
+        lastScan_ = request.code;
+      }
+    }
+
+    if (!seen && onScan_) {
+      onScan_(request);
+    }
+
+    const auto response = responseText("200 OK", "application/json; charset=utf-8", scanResultJson(true));
+    send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+    return true;
+  }
+
+  if (method == "POST" && target == "/api/device/debug") {
+    string expectedDevice;
+    string expectedToken;
+    {
+      lock_guard<mutex> lock(stateMutex_);
+      expectedDevice = pairedDeviceId_;
+      expectedToken = deviceToken_;
+    }
+    const auto suppliedToken = headerValue(headers, "X-HIMS-Token");
+    if (expectedToken.empty() || suppliedToken != expectedToken) {
+      const auto response = responseText("401 Unauthorized", "application/json; charset=utf-8",
+                                         debugResultJson(false, "Unauthorized device"));
+      send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+      return false;
+    }
+
+    DeviceDebugReport report;
+    string error;
+    if (!parseDebugReportJson(body, report, error) || (!expectedDevice.empty() && report.deviceId != expectedDevice)) {
+      if (error.empty()) error = "Device identity does not match the pairing";
+      const auto response = responseText("400 Bad Request", "application/json; charset=utf-8",
+                                         debugResultJson(false, error));
+      send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+      return false;
+    }
+
+    const auto response = responseText("200 OK", "application/json; charset=utf-8", debugResultJson(true));
+    send(clientSocket, response.c_str(), static_cast<int>(response.size()), 0);
+    if (onDebug_) {
+      onDebug_(report);
+    }
     return true;
   }
 

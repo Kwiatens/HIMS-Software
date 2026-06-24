@@ -21,6 +21,8 @@ using namespace std;
 
 namespace {
 
+constexpr size_t kDeviceDebugWindowLines = 14;
+
 filesystem::path resolveInventoryDatabasePath(const filesystem::path& selectedPath) {
   error_code error;
   if (selectedPath.empty()) {
@@ -1047,25 +1049,54 @@ void App::logActivity(const string& kind, const string& message) {
   dirty_ = true;
 }
 
-void App::pushScanCode(const string& code) {
+void App::pushScanCode(const DeviceScanRequest& request) {
   lock_guard<mutex> lock(scanMutex_);
-  scanQueue_.push_back(code);
+  scanQueue_.push_back(request);
 }
 
 void App::processScans() {
-  vector<string> pending;
+  vector<DeviceScanRequest> pending;
   {
     lock_guard<mutex> lock(scanMutex_);
     pending.swap(scanQueue_);
   }
 
-  for (const auto& code : pending) {
+  for (const auto& request : pending) {
+    const auto& code = request.code;
     const auto resolution = resolveScanCode(store_, code);
     if (resolution.matched) {
+      bool syncedDigiKeyMetadata = false;
+      InventoryItem* syncedItem = nullptr;
+      if (auto* item = store_.findById(resolution.itemId)) {
+        const auto shouldTrySync = resolution.created || trim(item->syncStatus) != "synced" ||
+                                   trim(item->partName) == "Scanned DigiKey Item";
+        if (shouldTrySync) {
+          const auto api = createDigiKeyApi();
+          if (api.client != nullptr) {
+            const auto lookup = !trim(item->digikeyPartNumber).empty() ? item->digikeyPartNumber : code;
+            if (!trim(lookup).empty()) {
+              string error;
+              const auto details = api.client->fetchProductDetails(lookup, &error);
+              if (details && mergeDigiKeyMetadata(*item, *details)) {
+                syncedDigiKeyMetadata = true;
+                syncedItem = item;
+              }
+            }
+          }
+        }
+      }
+
       if (resolution.created) {
-        logActivity("scan", "Created item from code " + code);
+        if (auto* item = store_.findById(resolution.itemId)) {
+          item->quantity = max(0, request.quantity);
+        }
+        logActivity("scan", "Created item from code " + code + " qty " + to_string(max(0, request.quantity)));
       } else {
         logActivity("scan", "Matched existing item with code " + code);
+      }
+
+      if (syncedDigiKeyMetadata && syncedItem != nullptr) {
+        logActivity("scan", "Synced DigiKey metadata for " + syncedItem->partName);
       }
 
       if (const auto* item = store_.findById(resolution.itemId)) {
@@ -1109,23 +1140,66 @@ void App::enqueueDeviceStatus(const DeviceStatusReport& report) {
   deviceStatusQueue_.push_back(report);
 }
 
+void App::enqueueDeviceDebug(const DeviceDebugReport& report) {
+  lock_guard<mutex> lock(deviceQueueMutex_);
+  deviceDebugQueue_.push_back(report);
+}
+
+void App::adjustDeviceDebugScroll(int delta) {
+  const auto total = deviceDebugLog_.size();
+  if (total == 0) {
+    deviceDebugScroll_ = 0;
+    deviceDebugFollow_ = true;
+    return;
+  }
+  const size_t step = static_cast<size_t>(delta < 0 ? -delta : delta);
+  const auto maxScroll = total > kDeviceDebugWindowLines ? total - kDeviceDebugWindowLines : 0;
+  if (delta < 0) {
+    deviceDebugFollow_ = false;
+    deviceDebugScroll_ = min(deviceDebugScroll_ + step, maxScroll);
+  } else if (delta > 0) {
+    deviceDebugFollow_ = false;
+    deviceDebugScroll_ = deviceDebugScroll_ > step ? deviceDebugScroll_ - step : 0;
+  }
+}
+
 void App::processDeviceRequests() {
   vector<shared_ptr<PendingDeviceQuantity>> quantities;
   vector<DeviceStatusReport> statuses;
+  vector<DeviceDebugReport> debugReports;
   {
     lock_guard<mutex> lock(deviceQueueMutex_);
     quantities.swap(deviceQuantityQueue_);
     statuses.swap(deviceStatusQueue_);
+    debugReports.swap(deviceDebugQueue_);
   }
 
   for (const auto& status : statuses) {
     deviceLastSeen_ = time(nullptr);
     deviceFirmwareVersion_ = status.firmwareVersion;
     deviceRssi_ = status.rssi;
+    deviceDebug_ = status.debug;
     if (trim(himsScanConfig_.deviceId).empty() && !trim(status.deviceId).empty()) {
       himsScanConfig_.deviceId = trim(status.deviceId);
       saveHimsScanConfig(himsScanConfigPath_, himsScanConfig_);
       server_.setDeviceCredentials(himsScanConfig_.deviceId, himsScanConfig_.token);
+    }
+    dirty_ = true;
+  }
+
+  for (const auto& debug : debugReports) {
+    const auto now = time(nullptr);
+    const auto level = trim(debug.level).empty() ? string("info") : trim(debug.level);
+    ostringstream out;
+    out << nowTimestampString(now) << " [" << level << "] " << debug.message;
+    deviceDebugLog_.push_back(out.str());
+    if (deviceDebugLog_.size() > 400U) {
+      deviceDebugLog_.erase(deviceDebugLog_.begin(), deviceDebugLog_.begin() + 100);
+    }
+    if (deviceDebugFollow_) {
+      deviceDebugScroll_ = deviceDebugLog_.size() > kDeviceDebugWindowLines
+                               ? deviceDebugLog_.size() - kDeviceDebugWindowLines
+                               : 0;
     }
     dirty_ = true;
   }

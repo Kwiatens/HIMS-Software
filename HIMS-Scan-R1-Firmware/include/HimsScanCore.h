@@ -32,11 +32,19 @@ inline String stripAimSymbologyPrefix(const String& value) {
   return value;
 }
 
+inline String hexByte(unsigned char value) {
+  static const char kHex[] = "0123456789abcdef";
+  String out;
+  out += kHex[(value >> 4U) & 0x0fU];
+  out += kHex[value & 0x0fU];
+  return out;
+}
+
 inline String escapeJson(const String& value) {
   String out;
   out.reserve(value.length() * 2U);
   for (size_t i = 0; i < value.length(); ++i) {
-    const char ch = value[i];
+    const unsigned char ch = static_cast<unsigned char>(value[i]);
     switch (ch) {
       case '\\':
         out += "\\\\";
@@ -54,18 +62,15 @@ inline String escapeJson(const String& value) {
         out += "\\t";
         break;
       default:
-        out += ch;
+        if (ch < 0x20U) {
+          out += "\\u00";
+          out += hexByte(ch);
+        } else {
+          out += static_cast<char>(ch);
+        }
         break;
     }
   }
-  return out;
-}
-
-inline String hexByte(unsigned char value) {
-  static const char kHex[] = "0123456789abcdef";
-  String out;
-  out += kHex[(value >> 4U) & 0x0fU];
-  out += kHex[value & 0x0fU];
   return out;
 }
 
@@ -80,6 +85,7 @@ class QuantityComposer {
  public:
   void clear() {
     digits_.clear();
+    defaultValue_ = 1;
   }
 
   bool empty() const {
@@ -96,16 +102,20 @@ class QuantityComposer {
     digits_ += digit;
   }
 
+  void setDefaultValue(int value) {
+    defaultValue_ = value <= 0 ? 1 : value;
+  }
+
   int valueOrOne() const {
     if (digits_.length() == 0) {
-      return 1;
+      return defaultValue_;
     }
     const long parsed = digits_.toInt();
-    return parsed <= 0 ? 1 : static_cast<int>(parsed);
+    return parsed <= 0 ? defaultValue_ : static_cast<int>(parsed);
   }
 
   String displayText() const {
-    return digits_.length() == 0 ? String("1") : digits_;
+    return digits_.length() == 0 ? String(defaultValue_) : digits_;
   }
 
   int consume(bool add) {
@@ -116,6 +126,15 @@ class QuantityComposer {
 
  private:
   String digits_;
+  int defaultValue_ = 1;
+};
+
+struct ScanRequest {
+  String deviceId;
+  String requestId;
+  uint32_t sequence = 0;
+  String code;
+  int quantity = 1;
 };
 
 inline String buildQuantityRequestJson(const String& deviceId, const String& requestId, const String& code, int delta) {
@@ -133,15 +152,51 @@ inline String buildQuantityRequestJson(const String& deviceId, const String& req
   return out;
 }
 
-inline String buildStatusRequestJson(const String& deviceId, const String& firmwareVersion, int rssi) {
+inline String buildScanRequestJson(const String& deviceId, const String& requestId, const String& code,
+                                  int quantity = 1) {
   String out;
-  out.reserve(deviceId.length() + firmwareVersion.length() + 32U);
+  out.reserve(deviceId.length() + requestId.length() + code.length() + 56U);
+  out += "{\"deviceId\":\"";
+  out += escapeJson(trimCopy(deviceId));
+  out += "\",\"requestId\":\"";
+  out += escapeJson(trimCopy(requestId));
+  out += "\",\"code\":\"";
+  out += escapeJson(trimCopy(code));
+  out += "\",\"quantity\":";
+  out += String(quantity);
+  out += '}';
+  return out;
+}
+
+inline String buildDebugRequestJson(const String& deviceId, const String& requestId, const String& level,
+                                    const String& message) {
+  String out;
+  out.reserve(deviceId.length() + requestId.length() + level.length() + message.length() + 48U);
+  out += "{\"deviceId\":\"";
+  out += escapeJson(trimCopy(deviceId));
+  out += "\",\"requestId\":\"";
+  out += escapeJson(trimCopy(requestId));
+  out += "\",\"level\":\"";
+  out += escapeJson(trimCopy(level));
+  out += "\",\"message\":\"";
+  out += escapeJson(trimCopy(message));
+  out += "\"}";
+  return out;
+}
+
+inline String buildStatusRequestJson(const String& deviceId, const String& firmwareVersion, int rssi,
+                                     const String& debug = String()) {
+  String out;
+  out.reserve(deviceId.length() + firmwareVersion.length() + debug.length() + 48U);
   out += "{\"deviceId\":\"";
   out += escapeJson(trimCopy(deviceId));
   out += "\",\"firmwareVersion\":\"";
   out += escapeJson(trimCopy(firmwareVersion));
   out += "\",\"rssi\":";
   out += String(rssi);
+  out += ",\"debug\":\"";
+  out += escapeJson(trimCopy(debug));
+  out += "\"";
   out += '}';
   return out;
 }

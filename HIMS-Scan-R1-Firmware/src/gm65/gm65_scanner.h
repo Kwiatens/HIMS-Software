@@ -26,6 +26,7 @@ class Gm65Scanner {
   unsigned long lastByteAt_ = 0;
   uint32_t baudRate_ = 9600;
   bool active_ = false;
+  bool discardingOversized_ = false;
 };
 
 }  // namespace hims_scan

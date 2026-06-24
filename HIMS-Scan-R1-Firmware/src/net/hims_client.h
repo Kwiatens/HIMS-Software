@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HimsScanCore.h"
 #include "storage/outbox_store.h"
 
 #include <Arduino.h>
@@ -21,8 +22,10 @@ class HimsClient {
 
   bool connected();
   bool resolveEndpoint(bool force = false);
+  bool postDebug(const String& message, const String& level = "info");
   bool postQuantity(const QuantityRequest& request, int& httpStatus, String& responseBody);
-  bool postStatus(const String& firmwareVersion, int rssi);
+  bool postScan(const ScanRequest& request, int& httpStatus, String& responseBody);
+  bool postStatus(const String& firmwareVersion, int rssi, const String& debug = String());
 
   String endpointSummary() const;
 

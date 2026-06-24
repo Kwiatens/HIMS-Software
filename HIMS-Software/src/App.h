@@ -159,7 +159,10 @@ class App {
   DeviceQuantityResult enqueueDeviceQuantity(const DeviceQuantityRequest& request);
   void enqueueDeviceStatus(const DeviceStatusReport& report);
   void processDeviceRequests();
+  void enqueueDeviceDebug(const DeviceDebugReport& report);
+  void adjustDeviceDebugScroll(int delta);
   std::string himsScanDeviceSummary() const;
+  ftxui::Element renderDeviceDebugConsoleUi() const;
 
   std::vector<size_t> filteredIndices() const;
   size_t selectedIndex() const;
@@ -211,7 +214,7 @@ class App {
   void captureUndoSnapshot();
   bool undoLastInventoryChange();
   void logActivity(const std::string& kind, const std::string& message);
-  void pushScanCode(const std::string& code);
+  void pushScanCode(const DeviceScanRequest& request);
   void processScans();
   void beginCsvImport();
   void moveImportSelection(int delta);
@@ -262,7 +265,7 @@ class App {
   std::string movingRackItemId_;
   std::string movingRackSource_;
   std::string rackFilter_;
-  std::vector<std::string> scanQueue_;
+  std::vector<DeviceScanRequest> scanQueue_;
   std::vector<CsvImportCandidate> importCandidates_;
   std::vector<std::string> importAcceptedItemIds_;
   std::filesystem::path importSourcePath_;
@@ -272,12 +275,17 @@ class App {
   std::mutex deviceQueueMutex_;
   std::vector<std::shared_ptr<PendingDeviceQuantity>> deviceQuantityQueue_;
   std::vector<DeviceStatusReport> deviceStatusQueue_;
+  std::vector<DeviceDebugReport> deviceDebugQueue_;
+  std::vector<std::string> deviceDebugLog_;
   std::unordered_map<std::string, DeviceQuantityResult> deviceRequestCache_;
   std::deque<std::string> deviceRequestOrder_;
   time_t deviceLastSeen_ = 0;
   std::string deviceFirmwareVersion_;
   int deviceRssi_ = 0;
+  std::string deviceDebug_;
   std::string deviceLastResult_;
+  size_t deviceDebugScroll_ = 0;
+  bool deviceDebugFollow_ = true;
   bool running_ = true;
   bool dirty_ = true;
   ConsoleSize lastDrawSize_{};

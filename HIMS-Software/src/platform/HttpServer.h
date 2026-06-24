@@ -11,6 +11,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <deque>
+#include <unordered_set>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -35,10 +37,13 @@ using std::string;
 using std::thread;
 using std::uint16_t;
 using std::vector;
+using std::deque;
+using std::unordered_set;
 
 class LocalHttpServer {
  public:
-  using ScanCallback = function<void(const string&)>;
+  using ScanCallback = function<void(const DeviceScanRequest&)>;
+  using DebugCallback = function<void(const DeviceDebugReport&)>;
   using QuantityCallback = function<DeviceQuantityResult(const DeviceQuantityRequest&)>;
   using StatusCallback = function<void(const DeviceStatusReport&)>;
 
@@ -49,7 +54,7 @@ class LocalHttpServer {
   LocalHttpServer& operator=(const LocalHttpServer&) = delete;
 
   bool start(uint16_t preferredPort, filesystem::path scannerPagePath, ScanCallback onScan,
-             QuantityCallback onQuantity = {}, StatusCallback onStatus = {});
+             QuantityCallback onQuantity = {}, StatusCallback onStatus = {}, DebugCallback onDebug = {});
   void stop();
   void setRecentActivity(vector<ActivityEntry> activities);
   void setDeviceCredentials(string deviceId, string token);
@@ -73,9 +78,12 @@ class LocalHttpServer {
   bool winsockStarted_ = false;
   thread worker_;
   ScanCallback onScan_;
+  DebugCallback onDebug_;
   QuantityCallback onQuantity_;
   StatusCallback onStatus_;
   mutable mutex stateMutex_;
+  deque<string> deviceScanRequestOrder_;
+  unordered_set<string> deviceScanRequestCache_;
   uint16_t port_ = 0;
   filesystem::path scannerPagePath_;
   string scannerPageHtml_;
